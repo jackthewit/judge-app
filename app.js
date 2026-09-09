@@ -89,7 +89,7 @@ const localStore = {
 
 const supaStore = {
   async getProjects() {
-    const { data, error } = await sb.from('projects').select('id, data');
+    const { data, error } = await sb.from('projects').select('id, data').order('id');
     if (error) throw error;
     return data || [];
   },
@@ -190,6 +190,8 @@ async function loadProject(pid) {
 
 function totalMax() { return SET.criteria.reduce((a, c) => a + Number(c.max || 0), 0); }
 function judgeByToken(tok) { return SET.judges.find(j => j.token === tok) || null; }
+/* 이름이 입력된 심사위원만 (설정 화면의 빈 행 제외) */
+function namedJudges() { return SET.judges.filter(j => j.name); }
 
 async function teamsFilled() {
   const rows = await store.getTeams(PROJ);
@@ -772,19 +774,43 @@ function renderSettingsSection() {
         '<button class="btn" id="cAdd" style="margin-top:8px;font-size:12px;padding:6px 12px">＋ 항목 추가</button></div>' +
     '</div>' +
     '<div style="margin-top:14px;display:flex;gap:10px;align-items:center">' +
-      '<button class="btn primary" id="setSave">설정 저장</button>' +
+      '<button class="btn primary" id="setSave">저장 후 새로고침</button>' +
+      '<span id="setStat" style="font-size:12.5px;color:#16a34a;min-width:90px">자동 저장 켜짐</span>' +
       '<span style="font-size:12px;color:#888">⚠️ 평가항목 변경은 이미 입력된 점수 열과 어긋날 수 있으니 심사 시작 전에 확정하세요.</span>' +
     '</div>';
 
+  /* 실시간 자동 저장 (입력 1초 후) */
+  let setTimer = null;
+  const setStat = (msg, ok) => {
+    const s = document.getElementById('setStat');
+    if (s) { s.textContent = msg; s.style.color = ok ? '#16a34a' : '#d97706'; }
+  };
+  const autosaveSettings = () => {
+    setStat('저장 중…', false);
+    clearTimeout(setTimer);
+    setTimer = setTimeout(async () => {
+      try {
+        const s = readForm();
+        const countChanged = s.teamCount !== SET.teamCount;
+        await store.saveProject(PROJ, s);
+        SET = s;
+        setStat('자동 저장됨 ✓', true);
+        if (countChanged) renderTeamsSection(await teamsFilled());
+      } catch (e) {
+        console.error(e);
+        setStat('저장 실패!', false);
+      }
+    }, 1000);
+  };
+
   const readForm = () => {
+    // 이름이 비어 있는 행도 유지 (입력 중 자동 저장으로 행이 사라지지 않도록)
     const judges = [];
     el.querySelectorAll('#judgeBody tr').forEach((tr, i) => {
-      const name = tr.querySelector('.jname').value.trim();
-      if (!name) return;
       const old = SET.judges[i];
       judges.push({
         id: old ? old.id : (Math.max(0, ...SET.judges.map(j => j.id), 0) + i + 1),
-        name,
+        name: tr.querySelector('.jname').value.trim(),
         role: tr.querySelector('.jrole').value,
         phone: tr.querySelector('.jphone').value.replace(/\D/g, '').slice(0, 4),
         token: old ? old.token : randToken(),
@@ -792,15 +818,14 @@ function renderSettingsSection() {
     });
     const criteria = [];
     el.querySelectorAll('#critBody tr').forEach(tr => {
-      const name = tr.querySelector('.cname-in').value.trim();
-      if (!name) return;
       criteria.push({
-        name,
+        name: tr.querySelector('.cname-in').value.trim(),
         max: Number(tr.querySelector('.cmax-in').value) || 0,
         desc: tr.querySelector('.cdesc-in').value.split('\n').map(s => s.trim()).filter(Boolean),
       });
     });
     return {
+      active: SET.active,
       eventTitle: el.querySelector('#setTitle').value.trim(),
       category: el.querySelector('#setCat').value.trim(),
       dateText: el.querySelector('#setDate').value.trim(),
@@ -810,28 +835,41 @@ function renderSettingsSection() {
     };
   };
 
+  const saveNow = async () => {
+    clearTimeout(setTimer);
+    await store.saveProject(PROJ, SET);
+  };
+
   el.onclick = async e => {
     if (e.target.id === 'jAdd') {
       SET = readForm();
       SET.judges.push({ id: Math.max(0, ...SET.judges.map(j => j.id), 0) + 1, name: '', role: '심사위원', phone: '', token: randToken() });
+      await saveNow();
       renderSettingsSection();
     } else if (e.target.id === 'cAdd') {
       SET = readForm();
       SET.criteria.push({ name: '', max: 10, desc: [] });
+      await saveNow();
       renderSettingsSection();
     } else if (e.target.classList.contains('jdel')) {
+      const i = +e.target.dataset.i;
+      const nm = SET.judges[i] && SET.judges[i].name;
+      if (!confirm((nm ? '"' + nm + '" 위원을' : '이 행을') + ' 삭제할까요?\n해당 위원의 점수·서명 데이터 연결이 끊어집니다.')) return;
       SET = readForm();
-      SET.judges.splice(+e.target.dataset.i, 1);
+      SET.judges.splice(i, 1);
+      await saveNow();
       renderSettingsSection();
     } else if (e.target.classList.contains('cdel')) {
       SET = readForm();
       SET.criteria.splice(+e.target.dataset.i, 1);
+      await saveNow();
       renderSettingsSection();
     } else if (e.target.id === 'setSave') {
       const s = readForm();
-      if (!s.judges.length) { toast('심사위원을 1명 이상 입력해주세요.'); return; }
-      if (!s.criteria.length) { toast('평가항목을 1개 이상 입력해주세요.'); return; }
+      if (!s.judges.some(j => j.name)) { toast('심사위원을 1명 이상 입력해주세요.'); return; }
+      if (!s.criteria.some(c => c.name)) { toast('평가항목을 1개 이상 입력해주세요.'); return; }
       try {
+        clearTimeout(setTimer);
         await store.saveProject(PROJ, s);
         SET = s;
         toast('✅ 설정이 저장되었습니다.');
@@ -849,6 +887,10 @@ function renderSettingsSection() {
       el.querySelectorAll('.cmax-in').forEach(inp => { sum += Number(inp.value) || 0; });
       document.getElementById('maxSum').textContent = sum;
     }
+    autosaveSettings();
+  };
+  el.onchange = e => {
+    if (e.target.tagName === 'SELECT') autosaveSettings();
   };
 }
 
@@ -861,35 +903,49 @@ function renderTeamsSection(teams) {
     '<td><input data-r="' + i + '" data-c="1" data-no="' + t.no + '" value="' + esc(t.name) + '"></td></tr>'
   ).join('');
   el.innerHTML =
-    '<h2>👥 팀 명단 <small style="font-weight:400;color:#888">— 모든 심사표에 공통 표시됩니다</small></h2>' +
+    '<h2>👥 팀 명단 <small style="font-weight:400;color:#888">— 모든 심사표에 공통 표시되며 실시간 자동 저장됩니다</small> ' +
+    '<span id="teamStat" style="font-size:12px;color:#16a34a;font-weight:400"></span></h2>' +
     '<table class="grid" style="max-width:520px"><thead><tr><th style="width:44px">연번</th>' +
-    '<th>단위(개인/단체)</th><th>성명(팀명)</th></tr></thead><tbody id="teamBody">' + rows + '</tbody></table>' +
-    '<button class="btn primary" id="teamSave" style="margin-top:10px">명단 저장</button>';
+    '<th>단위(개인/단체)</th><th>성명(팀명)</th></tr></thead><tbody id="teamBody">' + rows + '</tbody></table>';
   bindGridNav(el.querySelector('#teamBody'));
-  document.getElementById('teamSave').addEventListener('click', async () => {
+
+  const collectTeams = () => {
     const out = [];
     el.querySelectorAll('#teamBody tr').forEach(tr => {
       const inputs = tr.querySelectorAll('input');
       out.push({ no: +inputs[0].dataset.no, unit: inputs[0].value.trim(), name: inputs[1].value.trim() });
     });
-    try {
-      await store.saveTeams(PROJ, out);
-      toast('✅ 팀 명단이 저장되었습니다.');
-    } catch (e) {
-      console.error(e);
-      toast('저장 실패: ' + (e.message || e));
-    }
-  });
+    return out;
+  };
+  const teamStat = (msg, ok) => {
+    const s = document.getElementById('teamStat');
+    if (s) { s.textContent = msg; s.style.color = ok ? '#16a34a' : '#d97706'; }
+  };
+  let teamTimer = null;
+  el.oninput = () => {
+    teamStat('저장 중…', false);
+    clearTimeout(teamTimer);
+    teamTimer = setTimeout(async () => {
+      try {
+        await store.saveTeams(PROJ, collectTeams());
+        teamStat('자동 저장됨 ✓', true);
+      } catch (e) {
+        console.error(e);
+        teamStat('저장 실패!', false);
+      }
+    }, 800);
+  };
 }
 
 /* 심사위원 접속·진행·서명 관리 */
 async function renderLinksSection() {
   const el = document.getElementById('secLinks');
-  const all = await store.getAllScores(PROJ, SET.judges.map(j => j.id));
+  const judges = namedJudges();
+  const all = await store.getAllScores(PROJ, judges.map(j => j.id));
   const sigs = {};
-  for (const j of SET.judges) sigs[j.id] = await store.getSignatureMeta(PROJ, j.id);
+  for (const j of judges) sigs[j.id] = await store.getSignatureMeta(PROJ, j.id);
 
-  const rows = SET.judges.map(j => {
+  const rows = judges.map(j => {
     const link = judgeUrl(PROJ, j.token);
     const scores = all[j.id] || {};
     let done = 0, maxU = '';
@@ -955,10 +1011,11 @@ async function renderSummarySection() {
   const el = document.getElementById('secSummary');
   if (!el) return;
   const teams = await teamsFilled();
-  const all = await store.getAllScores(PROJ, SET.judges.map(j => j.id));
+  const judges = namedJudges();
+  const all = await store.getAllScores(PROJ, judges.map(j => j.id));
 
   const totals = teams.map(t => {
-    const per = SET.judges.map(j => {
+    const per = judges.map(j => {
       const sc = (all[j.id] || {})[t.no];
       if (!sc) return null;
       const filled = SET.criteria.map((c, i) => sc.vals[i]).filter(v => v !== null && v !== undefined && v !== '');
@@ -987,7 +1044,7 @@ async function renderSummarySection() {
     '<div class="p-title" style="font-size:15px">' + esc(SET.eventTitle) + ' — 심사결과 취합(총괄)</div>' +
     '<table class="grid" style="margin-top:10px"><thead><tr>' +
     '<th style="width:38px">연번</th><th style="width:86px">단위</th><th style="width:80px">성명</th>' +
-    SET.judges.map(j => '<th>' + esc(j.name) + '</th>').join('') +
+    judges.map(j => '<th>' + esc(j.name) + '</th>').join('') +
     '<th style="width:56px">합계</th><th style="width:56px">평균</th><th style="width:46px">순위</th>' +
     '</tr></thead><tbody>' + rows + '</tbody></table>' +
     '<div style="font-size:11.5px;color:#888;margin-top:8px" class="print-hide">순위는 평균 점수 기준(미입력 위원 제외)이며 20초마다 자동 갱신됩니다.</div>';
@@ -997,9 +1054,10 @@ async function renderSummarySection() {
 async function exportXlsx() {
   toast('엑셀 파일을 만드는 중…');
   const teams = await teamsFilled();
-  const all = await store.getAllScores(PROJ, SET.judges.map(j => j.id));
+  const judges = namedJudges();
+  const all = await store.getAllScores(PROJ, judges.map(j => j.id));
   const sigs = {};
-  for (const j of SET.judges) sigs[j.id] = await store.getSignatureMeta(PROJ, j.id);
+  for (const j of judges) sigs[j.id] = await store.getSignatureMeta(PROJ, j.id);
 
   const wb = new ExcelJS.Workbook();
   const border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
@@ -1014,7 +1072,7 @@ async function exportXlsx() {
 
   /* ── 취합 시트 ── */
   const ws = wb.addWorksheet('취합');
-  const sumCols = 3 + SET.judges.length + 3;
+  const sumCols = 3 + judges.length + 3;
   ws.mergeCells(1, 1, 1, sumCols);
   const tcell = ws.getCell(1, 1);
   tcell.value = SET.eventTitle + ' — 심사결과 취합(총괄)';
@@ -1023,13 +1081,13 @@ async function exportXlsx() {
   tcell.alignment = { horizontal: 'center', vertical: 'middle' };
   ws.getRow(1).height = 26;
 
-  const sumHead = ['연번', '단위', '성명'].concat(SET.judges.map(j => j.name)).concat(['합계', '평균', '순위']);
+  const sumHead = ['연번', '단위', '성명'].concat(judges.map(j => j.name)).concat(['합계', '평균', '순위']);
   ws.addRow([]);
   const hr = ws.addRow(sumHead);
   hr.eachCell(c => { c.fill = headFill; c.font = { bold: true }; c.border = border; c.alignment = { horizontal: 'center' }; });
 
   const totals = teams.map(t => {
-    const per = SET.judges.map(j => rowTotal((all[j.id] || {})[t.no]));
+    const per = judges.map(j => rowTotal((all[j.id] || {})[t.no]));
     const nums = per.filter(v => v !== null);
     return {
       t, per,
@@ -1054,7 +1112,7 @@ async function exportXlsx() {
   ws.getColumn(2).width = 16; ws.getColumn(3).width = 14;
 
   /* ── 위원별 시트 ── */
-  for (const j of SET.judges) {
+  for (const j of judges) {
     const wj = wb.addWorksheet(j.name);
     const nCols = 3 + SET.criteria.length + 2;
     wj.mergeCells(1, 1, 1, nCols);
@@ -1163,7 +1221,7 @@ async function renderLogin(allProjects) {
     judgeSel.innerHTML = '<option value="">— 심사위원 선택 —</option>';
     const p = projects.find(x => x.id === projSel.value);
     if (!p) return;
-    (p.data.judges || []).forEach(j => {
+    (p.data.judges || []).filter(j => j.name).forEach(j => {
       const opt = document.createElement('option');
       opt.value = j.token;
       opt.textContent = j.name + ' ' + j.role;
