@@ -10,8 +10,12 @@ const CONFIG = {
   SUPABASE_URL: 'https://tckrahbzaiiipfmewbbl.supabase.co',
   SUPABASE_ANON_KEY: 'sb_publishable_Gpvs-3LZ2lykLtWgS_c7OQ_TDwJMAq6',
 
-  /* 관리자(설정·취합) 페이지 접속: index.html?admin=아래값 */
-  ADMIN_TOKEN: 'admin-7k2p9x',
+  /* 관리자 로그인 — 첫 화면의 [관리자 로그인]에서 아이디/비밀번호 입력
+     비밀번호는 SHA-256 해시로만 저장됩니다. 비밀번호를 바꾸려면 터미널에서
+       printf '새비밀번호' | shasum -a 256
+     실행 후 나온 값을 ADMIN_PW_HASH에 붙여넣으세요. */
+  ADMIN_ID: 'admin',
+  ADMIN_PW_HASH: '74a09a7ccabde929b4f99b9521adfa0d89a7c5af5abcdc0ec9fe65e558195f9b',
 
   /* 최초 실행 시 기본값 — 관리자 화면에서 언제든 변경 가능 */
   DEFAULTS: {

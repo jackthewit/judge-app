@@ -34,6 +34,22 @@ const judgeUrl = (pid, tok, extra) =>
 const randToken = () => 'j-' + Math.random().toString(36).slice(2, 8);
 const randPid = () => 'p-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 
+/* ─────────────────────── 관리자 인증 ─────────────────────── */
+
+async function sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+const ADMIN_AUTH_KEY = 'judgeapp:adminAuth';
+function isAdminAuthed() {
+  try { return localStorage.getItem(ADMIN_AUTH_KEY) === CONFIG.ADMIN_PW_HASH; }
+  catch (e) { return false; }
+}
+function adminLogout() {
+  try { localStorage.removeItem(ADMIN_AUTH_KEY); } catch (e) {}
+  location.href = appUrl('');
+}
+
 /* ─────────────────────── 저장소 (Supabase / 로컬 체험) ─────────────────────── */
 
 const LS = 'judgeapp2:';
@@ -676,6 +692,7 @@ async function renderAdmin(projects) {
       '<button class="btn" id="btnReload">🔄 새로고침</button>' +
       '<button class="btn" id="btnXlsx">📊 엑셀 저장</button>' +
       '<button class="btn primary" id="btnPrintSum" title="인쇄 대화상자에서 \'PDF로 저장\' 선택 시 PDF로 저장됩니다">🖨 취합 인쇄 · PDF</button>' +
+      '<button class="btn" id="btnLogout" title="관리자 로그아웃">로그아웃</button>' +
     '</div>' +
     '<div class="admin-wrap">' +
       '<div class="admin-section print-hide" id="secSettings"></div>' +
@@ -685,8 +702,7 @@ async function renderAdmin(projects) {
     '</div>';
 
   const goAdmin = pid => {
-    location.href = appUrl('?admin=' + encodeURIComponent(CONFIG.ADMIN_TOKEN) +
-      (pid ? '&p=' + encodeURIComponent(pid) : ''));
+    location.href = appUrl('?admin=1' + (pid ? '&p=' + encodeURIComponent(pid) : ''));
   };
 
   document.getElementById('projSel').addEventListener('change', e => goAdmin(e.target.value));
@@ -719,6 +735,9 @@ async function renderAdmin(projects) {
   document.getElementById('btnReload').addEventListener('click', () => location.reload());
   document.getElementById('btnPrintSum').addEventListener('click', () => window.print());
   document.getElementById('btnXlsx').addEventListener('click', exportXlsx);
+  document.getElementById('btnLogout').addEventListener('click', () => {
+    if (confirm('관리자에서 로그아웃할까요?')) adminLogout();
+  });
 
   renderSettingsSection();
   renderTeamsSection(teams);
@@ -1197,7 +1216,7 @@ async function renderLogin(allProjects) {
   let demoLinks = '';
   if (!IS_REAL) {
     demoLinks = '<div class="links"><b>🧪 체험용 바로가기</b><br>' +
-      '<a href="?admin=' + esc(CONFIG.ADMIN_TOKEN) + '">관리자 화면</a></div>';
+      '<a href="?admin=1">관리자 화면</a></div>';
   }
 
   $app.innerHTML =
@@ -1212,7 +1231,9 @@ async function renderLogin(allProjects) {
         ' style="padding:12px;border:1.5px solid #d3d9e2;border-radius:10px;font-size:15px;letter-spacing:4px">' +
       '<button class="btn primary" id="loginBtn" style="padding:13px 0;font-size:15px">입장하기</button>' +
       '<div id="loginErr" style="display:none;color:#b91c1c;font-size:13px;text-align:center"></div>' +
-    '</div>' + demoLinks + '</div>';
+    '</div>' + demoLinks +
+    '<div style="margin-top:22px"><a href="?admin=1" style="font-size:12px;color:#9ca3af">🔐 관리자 로그인</a></div>' +
+    '</div>';
 
   const projSel = document.getElementById('loginProj');
   const judgeSel = document.getElementById('loginJudge');
@@ -1249,6 +1270,43 @@ async function renderLogin(allProjects) {
   });
 }
 
+/* ─────────────────────── 관리자 로그인 화면 ─────────────────────── */
+
+function renderAdminLogin() {
+  $app.innerHTML =
+    '<div class="landing"><h1>🔐 관리자 로그인</h1>' +
+    '<p>심사 프로젝트 관리를 위해 로그인해주세요.</p>' +
+    '<div style="margin-top:18px;display:grid;gap:10px;text-align:left">' +
+      '<input id="adminId" placeholder="아이디" autocomplete="username"' +
+        ' style="padding:12px;border:1.5px solid #d3d9e2;border-radius:10px;font-size:15px">' +
+      '<input id="adminPw" type="password" placeholder="비밀번호" autocomplete="current-password"' +
+        ' style="padding:12px;border:1.5px solid #d3d9e2;border-radius:10px;font-size:15px">' +
+      '<button class="btn primary" id="adminLoginBtn" style="padding:13px 0;font-size:15px">로그인</button>' +
+      '<div id="adminErr" style="display:none;color:#b91c1c;font-size:13px;text-align:center"></div>' +
+    '</div>' +
+    '<div style="margin-top:22px"><a href="' + esc(appUrl('')) + '" style="font-size:12px;color:#9ca3af">← 심사위원 입장으로</a></div>' +
+    '</div>';
+
+  const tryLogin = async () => {
+    const id = document.getElementById('adminId').value.trim();
+    const pw = document.getElementById('adminPw').value;
+    const err = document.getElementById('adminErr');
+    const hash = await sha256Hex(pw);
+    if (id !== CONFIG.ADMIN_ID || hash !== CONFIG.ADMIN_PW_HASH) {
+      err.textContent = '아이디 또는 비밀번호가 일치하지 않습니다.';
+      err.style.display = 'block';
+      return;
+    }
+    try { localStorage.setItem(ADMIN_AUTH_KEY, hash); } catch (e) {}
+    location.href = appUrl('?admin=1');
+  };
+  document.getElementById('adminLoginBtn').addEventListener('click', tryLogin);
+  document.getElementById('adminPw').addEventListener('keydown', e => {
+    if (e.key === 'Enter') tryLogin();
+  });
+  document.getElementById('adminId').focus();
+}
+
 /* ─────────────────────── 라우팅 ─────────────────────── */
 
 (async function main() {
@@ -1276,7 +1334,11 @@ async function renderLogin(allProjects) {
       return;
     }
 
-    if (admin && admin === CONFIG.ADMIN_TOKEN) {
+    if (admin !== null) {
+      if (!isAdminAuthed()) {
+        renderAdminLogin();
+        return;
+      }
       const projects = await ensureAnyProject();
       const target = (pid && projects.some(p => p.id === pid)) ? pid : projects[0].id;
       await loadProject(target);
