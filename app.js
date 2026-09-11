@@ -750,6 +750,26 @@ async function renderAdmin(projects) {
   await renderLinksSection();
   await renderSummarySection();
 
+  /* 점수·서명 실시간 반영 (Supabase Realtime) + 20초 폴링 백업 */
+  if (IS_REAL) {
+    if (window.__adminChan) {
+      try { sb.removeChannel(window.__adminChan); } catch (e) {}
+    }
+    let rtTimer = null;
+    const bump = () => {
+      clearTimeout(rtTimer);
+      rtTimer = setTimeout(() => {
+        if (!document.getElementById('secSummary')) return;
+        renderSummarySection();
+        renderLinksSection();
+      }, 700);
+    };
+    window.__adminChan = sb.channel('admin-' + PROJ)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'scores', filter: 'project_id=eq.' + PROJ }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'signatures', filter: 'project_id=eq.' + PROJ }, bump)
+      .subscribe();
+  }
+
   clearInterval(window.__sumTimer);
   window.__sumTimer = setInterval(() => {
     if (document.getElementById('secSummary')) renderSummarySection();
@@ -1081,7 +1101,9 @@ async function renderSummarySection() {
     judges.map(j => '<th>' + esc(j.name) + '</th>').join('') +
     '<th style="width:56px">합계</th><th style="width:56px">평균</th><th style="width:46px">순위</th>' +
     '</tr></thead><tbody>' + rows + '</tbody></table>' +
-    '<div style="font-size:11.5px;color:#888;margin-top:8px" class="print-hide">순위는 평균 점수 기준(미입력 위원 제외)이며 20초마다 자동 갱신됩니다.</div>';
+    '<div style="font-size:11.5px;color:#888;margin-top:8px" class="print-hide">순위는 평균 점수 기준(미입력 위원 제외). ' +
+    (IS_REAL ? '🟢 심사위원이 점수를 입력하면 실시간으로 반영됩니다.' : '20초마다 자동 갱신됩니다.') +
+    ' <span style="color:#b6bcc6">(갱신: ' + new Date().toLocaleTimeString('ko-KR') + ')</span></div>';
 }
 
 /* 엑셀(xlsx) 저장 — 취합 1시트 + 위원별 심사표 시트(서명 이미지 포함) */

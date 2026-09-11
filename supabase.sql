@@ -53,3 +53,8 @@ create policy anon_all_projects   on projects   for all using (true) with check 
 create policy anon_all_teams      on teams      for all using (true) with check (true);
 create policy anon_all_scores     on scores     for all using (true) with check (true);
 create policy anon_all_signatures on signatures for all using (true) with check (true);
+
+-- 관리자 화면 실시간 반영 (Supabase Realtime)
+alter publication supabase_realtime add table scores;
+alter publication supabase_realtime add table signatures;
+alter publication supabase_realtime add table teams;
