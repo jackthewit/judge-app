@@ -10,14 +10,17 @@ create table if not exists projects (
   data jsonb not null
 );
 
--- 팀 명단
+-- 팀 명단 (unit=개인/단체, name=대표자 성명, pname=프로젝트명)
 create table if not exists teams (
   project_id text not null,
   no         int  not null,
   unit       text default '',
   name       text default '',
+  pname      text default '',
   primary key (project_id, no)
 );
+-- 기존 DB에 pname 열 추가용:
+alter table teams add column if not exists pname text default '';
 
 -- 위원별 점수
 create table if not exists scores (
