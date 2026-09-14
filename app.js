@@ -263,6 +263,21 @@ function bindGridNav(container) {
   container.addEventListener('focusin', e => {
     if (e.target.select && e.target.tagName === 'INPUT') e.target.select();
   });
+  /* 칸 안 어디를 클릭해도 입력칸이 활성화되도록 (심사의견처럼 입력칸보다 셀이 클 때) */
+  container.addEventListener('mousedown', e => {
+    if (e.target.matches('input, textarea, button')) return;
+    const td = e.target.closest('td');
+    if (!td) return;
+    const f = td.querySelector('input, textarea');
+    if (f && !f.disabled) {
+      e.preventDefault();
+      f.focus();
+      if (f.tagName === 'TEXTAREA' && f.setSelectionRange) {
+        const L = f.value.length;
+        f.setSelectionRange(L, L);
+      }
+    }
+  });
 }
 
 function autoGrow(ta) {

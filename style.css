@@ -82,6 +82,7 @@ table.score textarea {
   padding: 7px 8px;
 }
 table.score .cell:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
+table.score td.cell { cursor: text; }
 table.score input.invalid { color: #dc2626; font-weight: 700; }
 
 /* 하단 확인·서명 */
