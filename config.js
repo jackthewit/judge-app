@@ -20,6 +20,7 @@ const CONFIG = {
   /* 최초 실행 시 기본값 — 관리자 화면에서 언제든 변경 가능 */
   DEFAULTS: {
     active: true,   // 공개 여부 (관리자 화면에서 전환)
+    compName: '2026 강원 AI 에듀톤',   // 대회명 — 같은 대회의 여러 부문이 로그인에서 묶임
     eventTitle: '2026 강원 AI 에듀톤 예선 심사표(위원별)',
     category: '예비교원(초등)',
     dateText: '2026.8.3',

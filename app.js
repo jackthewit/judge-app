@@ -208,6 +208,9 @@ function totalMax() { return SET.criteria.reduce((a, c) => a + Number(c.max || 0
 function judgeByToken(tok) { return SET.judges.find(j => j.token === tok) || null; }
 /* 이름이 입력된 심사위원만 (설정 화면의 빈 행 제외) */
 function namedJudges() { return SET.judges.filter(j => j.name); }
+/* 대회명 (없으면 심사표 제목으로 대체 — 기존 프로젝트 호환) */
+const compNameOf = d => d.compName || d.eventTitle || '(제목 없음)';
+const divNameOf = d => d.category || d.eventTitle || '(부문 없음)';
 
 async function teamsFilled() {
   const rows = await store.getTeams(PROJ);
@@ -700,7 +703,7 @@ async function renderAdmin(projects) {
 
   const projOptions = projects.map(p =>
     '<option value="' + esc(p.id) + '"' + (p.id === PROJ ? ' selected' : '') + '>' +
-    esc(p.data.eventTitle || '(제목 없음)') + '</option>').join('');
+    esc(compNameOf(p.data) + ' — ' + divNameOf(p.data)) + '</option>').join('');
 
   $app.innerHTML =
     (IS_REAL ? '' : '<div class="demo-banner">🧪 체험 모드 — 이 컴퓨터에만 저장됩니다. config.js에 Supabase 키를 넣으면 실전 모드가 됩니다.</div>') +
@@ -708,7 +711,8 @@ async function renderAdmin(projects) {
       '<span class="brand">🏆 심사 관리</span>' +
       '<select id="projSel" style="padding:8px;border:1px solid #d3d9e2;border-radius:8px;max-width:280px">' +
         projOptions + '</select>' +
-      '<button class="btn" id="projNew">＋ 새 프로젝트</button>' +
+      '<button class="btn" id="projNew">＋ 새 대회</button>' +
+      '<button class="btn" id="divNew">＋ 부문 추가</button>' +
       '<button class="btn" id="projActive">' +
         (SET.active === false ? '⚫ 비공개 (심사위원에게 숨김)' : '🟢 공개중 (로그인 화면에 표시)') + '</button>' +
       '<button class="btn" id="projDel" style="color:#b91c1c">삭제</button>' +
@@ -731,14 +735,29 @@ async function renderAdmin(projects) {
 
   document.getElementById('projSel').addEventListener('change', e => goAdmin(e.target.value));
   document.getElementById('projNew').addEventListener('click', async () => {
-    const title = prompt('새 심사 프로젝트 이름(심사표 제목)을 입력하세요:');
+    const title = prompt('새 대회 이름(심사표 제목)을 입력하세요:');
     if (!title) return;
     const d = JSON.parse(JSON.stringify(CONFIG.DEFAULTS));
     d.eventTitle = title;
-    d.judges = [];      // 새 프로젝트는 심사위원을 새로 입력
+    d.compName = title;
+    d.judges = [];      // 새 대회는 심사위원을 새로 입력
     d.active = false;   // 미리 만들어두고 당일에 공개
     const id = randPid();
     await store.saveProject(id, d);
+    goAdmin(id);
+  });
+  document.getElementById('divNew').addEventListener('click', async () => {
+    const comp = compNameOf(SET);
+    const div = prompt('"' + comp + '" 대회에 추가할 부문 이름을 입력하세요:\n(예: 프로젝트 작품 시연, 포스터 발표)');
+    if (!div) return;
+    const d = JSON.parse(JSON.stringify(SET));   // 평가항목·날짜 등 현재 부문 설정 복제
+    d.compName = comp;
+    d.category = div;
+    d.eventTitle = comp + ' ' + div + ' 심사표';
+    d.judges = [];      // 부문별 심사위원은 새로 입력
+    const id = randPid();
+    await store.saveProject(id, d);
+    toast('✅ "' + div + '" 부문이 추가되었습니다. 심사위원과 팀 명단을 입력해주세요.');
     goAdmin(id);
   });
   document.getElementById('projActive').addEventListener('click', async () => {
@@ -820,8 +839,9 @@ function renderSettingsSection() {
   el.innerHTML =
     '<h2>⚙️ 프로젝트 설정 <small style="font-weight:400;color:#888">— 행사명·심사위원·평가항목을 자유롭게 구성하세요</small></h2>' +
     '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px">' +
-      '<label style="font-size:12.5px">행사/심사표 제목<br><input id="setTitle" style="width:100%;padding:7px;border:1px solid #d3d9e2;border-radius:8px" value="' + esc(SET.eventTitle) + '"></label>' +
+      '<label style="font-size:12.5px">대회명 <small style="color:#888">(같은 대회명의 부문들이 로그인에서 묶입니다)</small><br><input id="setComp" style="width:100%;padding:7px;border:1px solid #d3d9e2;border-radius:8px" value="' + esc(SET.compName || SET.eventTitle) + '"></label>' +
       '<label style="font-size:12.5px">부문<br><input id="setCat" style="width:100%;padding:7px;border:1px solid #d3d9e2;border-radius:8px" value="' + esc(SET.category) + '"></label>' +
+      '<label style="font-size:12.5px">심사표 제목 (인쇄용)<br><input id="setTitle" style="width:100%;padding:7px;border:1px solid #d3d9e2;border-radius:8px" value="' + esc(SET.eventTitle) + '"></label>' +
       '<label style="font-size:12.5px">심사일 (표기)<br><input id="setDate" style="width:100%;padding:7px;border:1px solid #d3d9e2;border-radius:8px" value="' + esc(SET.dateText) + '"></label>' +
       '<label style="font-size:12.5px">인쇄용 날짜 문구<br><input id="setDateLine" style="width:100%;padding:7px;border:1px solid #d3d9e2;border-radius:8px" value="' + esc(SET.dateLine) + '"></label>' +
       '<label style="font-size:12.5px">심사 대상(팀) 수<br><input id="setCount" inputmode="numeric" style="width:100%;padding:7px;border:1px solid #d3d9e2;border-radius:8px" value="' + esc(SET.teamCount) + '"></label>' +
@@ -889,6 +909,7 @@ function renderSettingsSection() {
     });
     return {
       active: SET.active,
+      compName: el.querySelector('#setComp').value.trim(),
       eventTitle: el.querySelector('#setTitle').value.trim(),
       category: el.querySelector('#setCat').value.trim(),
       dateText: el.querySelector('#setDate').value.trim(),
@@ -1289,14 +1310,25 @@ async function exportXlsx() {
 /* ─────────────────────── 로그인 화면 ─────────────────────── */
 
 async function renderLogin(allProjects) {
-  const projects = allProjects.filter(p => p.data.active !== false);   // 공개된 프로젝트만
+  const projects = allProjects.filter(p => p.data.active !== false);   // 공개된 부문만
   if (!projects.length) {
     $app.innerHTML = '<div class="landing"><h1>🏆 심사위원 입장</h1>' +
-      '<p>현재 진행 중인 심사가 없습니다.<br>운영자의 안내를 기다려주세요.</p></div>';
+      '<p>현재 진행 중인 심사가 없습니다.<br>운영자의 안내를 기다려주세요.</p>' +
+      '<div style="margin-top:22px"><a href="?admin=1" style="font-size:12px;color:#9ca3af">🔐 관리자 로그인</a></div></div>';
     return;
   }
-  const projOptions = projects.map(p =>
-    '<option value="' + esc(p.id) + '">' + esc(p.data.eventTitle || '(제목 없음)') + '</option>').join('');
+
+  // 대회명으로 부문들을 묶음
+  const comps = [];
+  projects.forEach(p => {
+    const cn = compNameOf(p.data);
+    let g = comps.find(c => c.name === cn);
+    if (!g) { g = { name: cn, divs: [] }; comps.push(g); }
+    g.divs.push(p);
+  });
+
+  const compOptions = comps.map((c, i) =>
+    '<option value="' + i + '">' + esc(c.name) + '</option>').join('');
 
   let demoLinks = '';
   if (!IS_REAL) {
@@ -1306,10 +1338,12 @@ async function renderLogin(allProjects) {
 
   $app.innerHTML =
     '<div class="landing"><h1>🏆 심사위원 입장</h1>' +
-    '<p>심사 프로젝트와 본인 이름을 선택하고<br>전화번호 뒤 4자리를 입력해주세요.</p>' +
+    '<p>대회와 부문, 본인 이름을 선택하고<br>전화번호 뒤 4자리를 입력해주세요.</p>' +
     '<div style="margin-top:18px;display:grid;gap:10px;text-align:left">' +
-      '<select id="loginProj" style="padding:12px;border:1.5px solid #d3d9e2;border-radius:10px;font-size:15px">' +
-        (projects.length > 1 ? '<option value="">— 심사 프로젝트 선택 —</option>' : '') + projOptions + '</select>' +
+      '<select id="loginComp" style="padding:12px;border:1.5px solid #d3d9e2;border-radius:10px;font-size:15px">' +
+        (comps.length > 1 ? '<option value="">— 대회 선택 —</option>' : '') + compOptions + '</select>' +
+      '<select id="loginDiv" style="padding:12px;border:1.5px solid #d3d9e2;border-radius:10px;font-size:15px">' +
+        '<option value="">— 부문 선택 —</option></select>' +
       '<select id="loginJudge" style="padding:12px;border:1.5px solid #d3d9e2;border-radius:10px;font-size:15px">' +
         '<option value="">— 심사위원 선택 —</option></select>' +
       '<input id="loginPhone" type="password" inputmode="numeric" maxlength="4" placeholder="전화번호 뒤 4자리"' +
@@ -1320,12 +1354,18 @@ async function renderLogin(allProjects) {
     '<div style="margin-top:22px"><a href="?admin=1" style="font-size:12px;color:#9ca3af">🔐 관리자 로그인</a></div>' +
     '</div>';
 
-  const projSel = document.getElementById('loginProj');
+  const compSel = document.getElementById('loginComp');
+  const divSel = document.getElementById('loginDiv');
   const judgeSel = document.getElementById('loginJudge');
 
-  const fillJudges = async () => {
+  const currentProject = () => {
+    const g = comps[Number(compSel.value)];
+    if (!g) return null;
+    return g.divs.find(p => p.id === divSel.value) || null;
+  };
+  const fillJudges = () => {
     judgeSel.innerHTML = '<option value="">— 심사위원 선택 —</option>';
-    const p = projects.find(x => x.id === projSel.value);
+    const p = currentProject();
     if (!p) return;
     (p.data.judges || []).filter(j => j.name).forEach(j => {
       const opt = document.createElement('option');
@@ -1334,14 +1374,29 @@ async function renderLogin(allProjects) {
       judgeSel.appendChild(opt);
     });
   };
-  projSel.addEventListener('change', fillJudges);
-  await fillJudges();
+  const fillDivs = () => {
+    const g = comps[Number(compSel.value)];
+    divSel.innerHTML = '<option value="">— 부문 선택 —</option>';
+    if (g) {
+      g.divs.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = divNameOf(p.data);
+        divSel.appendChild(opt);
+      });
+      if (g.divs.length === 1) divSel.value = g.divs[0].id;   // 부문이 하나면 자동 선택
+    }
+    fillJudges();
+  };
+  compSel.addEventListener('change', fillDivs);
+  divSel.addEventListener('change', fillJudges);
+  fillDivs();
 
   const tryLogin = () => {
     const err = document.getElementById('loginErr');
     const show = m => { err.textContent = m; err.style.display = 'block'; };
-    const p = projects.find(x => x.id === projSel.value);
-    if (!p) { show('심사 프로젝트를 선택해주세요.'); return; }
+    const p = currentProject();
+    if (!p) { show('대회와 부문을 선택해주세요.'); return; }
     const judge = (p.data.judges || []).find(j => j.token === judgeSel.value);
     if (!judge) { show('심사위원을 선택해주세요.'); return; }
     const pin = document.getElementById('loginPhone').value.trim();
