@@ -231,6 +231,9 @@ async function teamsFilled() {
  */
 function bindGridNav(container) {
   container.addEventListener('keydown', e => {
+    // 한글 입력(IME) 조합 중에는 셀 이동 금지 — 조합 중이던 글자가 다음 칸에 딸려 들어가는 것 방지.
+    // 조합이 끝난 뒤(방향키 한 번 더) 정상 이동됩니다.
+    if (e.isComposing || e.keyCode === 229) return;
     const el = e.target;
     if (!el.dataset || el.dataset.r === undefined) return;
     const r = +el.dataset.r, c = +el.dataset.c;
