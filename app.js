@@ -949,15 +949,45 @@ function renderTeamsSection(teams) {
     '<tr><td style="width:44px">' + t.no + '</td>' +
     '<td><input data-r="' + i + '" data-c="0" data-no="' + t.no + '" value="' + esc(t.unit) + '"></td>' +
     '<td><input data-r="' + i + '" data-c="1" data-no="' + t.no + '" value="' + esc(t.name) + '"></td>' +
-    '<td><input data-r="' + i + '" data-c="2" data-no="' + t.no + '" value="' + esc(t.pname) + '"></td></tr>'
+    '<td><input data-r="' + i + '" data-c="2" data-no="' + t.no + '" value="' + esc(t.pname) + '"></td>' +
+    '<td style="white-space:nowrap">' +
+      '<button class="copybtn tmove" data-no="' + t.no + '" data-dir="-1" title="위로"' + (i === 0 ? ' disabled' : '') + '>▲</button>' +
+      '<button class="copybtn tmove" data-no="' + t.no + '" data-dir="1" title="아래로"' + (i === teams.length - 1 ? ' disabled' : '') + '>▼</button>' +
+    '</td></tr>'
   ).join('');
   el.innerHTML =
     '<h2>👥 팀 명단 <small style="font-weight:400;color:#888">— 모든 심사표에 공통 표시되며 실시간 자동 저장됩니다</small> ' +
     '<span id="teamStat" style="font-size:12px;color:#16a34a;font-weight:400"></span></h2>' +
-    '<table class="grid" style="max-width:680px"><thead><tr><th style="width:44px">연번</th>' +
+    '<table class="grid" style="max-width:760px"><thead><tr><th style="width:44px">연번</th>' +
     '<th style="width:120px">개인/단체</th><th style="width:130px">대표자 성명</th>' +
-    '<th>프로젝트명</th></tr></thead><tbody id="teamBody">' + rows + '</tbody></table>';
+    '<th>프로젝트명</th><th style="width:76px">순서</th></tr></thead><tbody id="teamBody">' + rows + '</tbody></table>' +
+    '<div style="font-size:11.5px;color:#888;margin-top:6px">▲▼로 발표 순서를 바꿀 수 있습니다 (연번은 유지, 팀 내용이 이동). ' +
+    '⚠️ 이미 입력된 점수는 연번에 붙어 있으니 순서 변경은 심사 시작 전에 해주세요.</div>';
   bindGridNav(el.querySelector('#teamBody'));
+
+  /* 행 순서 이동 (▲▼) */
+  el.onclick = async e => {
+    const b = e.target.closest('.tmove');
+    if (!b || b.disabled) return;
+    const list = collectTeams();
+    const i = list.findIndex(t => t.no === +b.dataset.no);
+    const j = i + Number(b.dataset.dir);
+    if (i < 0 || j < 0 || j >= list.length) return;
+    ['unit', 'name', 'pname'].forEach(k => {
+      const tmp = list[i][k];
+      list[i][k] = list[j][k];
+      list[j][k] = tmp;
+    });
+    renderTeamsSection(list);
+    const stat = document.getElementById('teamStat');
+    try {
+      await store.saveTeams(PROJ, list);
+      if (stat) { stat.textContent = '자동 저장됨 ✓'; stat.style.color = '#16a34a'; }
+    } catch (err) {
+      console.error(err);
+      if (stat) { stat.textContent = '저장 실패!'; stat.style.color = '#d97706'; }
+    }
+  };
 
   const collectTeams = () => {
     const out = [];
