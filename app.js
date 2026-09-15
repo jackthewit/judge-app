@@ -266,18 +266,20 @@ function bindGridNav(container) {
   container.addEventListener('focusin', e => {
     if (e.target.select && e.target.tagName === 'INPUT') e.target.select();
   });
-  /* 칸 안 어디를 클릭해도 입력칸이 활성화되도록 (심사의견처럼 입력칸보다 셀이 클 때) */
-  container.addEventListener('mousedown', e => {
+  /* 칸 안 어디를 클릭/터치해도 입력칸이 활성화되도록 (심사의견처럼 입력칸보다 셀이 클 때)
+     - click 이벤트 사용: mousedown+preventDefault는 iOS에서 포커스/키보드를 막을 수 있음 */
+  container.addEventListener('click', e => {
     if (e.target.matches('input, textarea, button')) return;
     const td = e.target.closest('td');
     if (!td) return;
     const f = td.querySelector('input, textarea');
-    if (f && !f.disabled) {
-      e.preventDefault();
+    if (f && !f.disabled && document.activeElement !== f) {
       f.focus();
       if (f.tagName === 'TEXTAREA' && f.setSelectionRange) {
         const L = f.value.length;
         f.setSelectionRange(L, L);
+      } else if (f.select) {
+        f.select();
       }
     }
   });
@@ -451,11 +453,19 @@ async function renderJudge(judge) {
   showSig(sig);
 
   /* 서명 완료 시 편집 잠금 (수정하려면 경고를 거쳐 잠금 해제) */
+  let isLocked = false;
   const setLock = on => {
+    isLocked = on;
     table.querySelectorAll('input, textarea').forEach(i => { i.disabled = on; });
     document.getElementById('lockBanner').style.display = on ? 'flex' : 'none';
   };
   setLock(!!sig);
+  /* 잠긴 상태에서 입력하려고 하면 이유를 안내 */
+  table.addEventListener('click', () => {
+    if (isLocked) {
+      toast('🔒 서명이 완료되어 입력이 잠겨 있습니다. 수정하려면 상단의 [수정하기]를 눌러주세요.', 2800);
+    }
+  });
   document.getElementById('btnUnlock').addEventListener('click', () => {
     if (!confirm('⚠️ 이미 서명이 완료된 심사표입니다.\n\n서명 후 내용을 수정하면 심사 결과의 신뢰성에 문제가 될 수 있으며,\n관리자 화면에 "서명 후 수정됨"으로 표시됩니다.\n\n정말 수정하시겠습니까?')) return;
     if (!confirm('정말입니까? 수정 후에는 다시 서명해 주세요.')) return;

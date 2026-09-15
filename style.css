@@ -84,6 +84,8 @@ table.score textarea {
 table.score .cell:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
 table.score td.cell { cursor: text; }
 table.score input.invalid { color: #dc2626; font-weight: 700; }
+/* 잠금 상태에서도 터치가 셀로 전달되어 안내 문구가 뜨도록 */
+table.score input:disabled, table.score textarea:disabled { pointer-events: none; }
 
 /* 하단 확인·서명 */
 .p-confirm {
