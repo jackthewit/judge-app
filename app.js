@@ -246,7 +246,13 @@ function bindGridNav(container) {
       if (nxt) {
         e.preventDefault();
         nxt.focus();
-        if (nxt.select) nxt.select();
+        if (nxt.tagName === 'TEXTAREA') {
+          // 서술형 칸으로 이동 시엔 전체 선택 대신 커서를 글 끝에 (기존 내용 실수로 덮어쓰기 방지)
+          const L = nxt.value.length;
+          if (nxt.setSelectionRange) nxt.setSelectionRange(L, L);
+        } else if (nxt.select) {
+          nxt.select();
+        }
       }
     };
     const key = { Up: 'ArrowUp', Down: 'ArrowDown', Left: 'ArrowLeft', Right: 'ArrowRight' }[e.key] || e.key;
@@ -255,7 +261,16 @@ function bindGridNav(container) {
       go(r + 1, c);
       return;
     }
-    if (isTa) return;
+    if (isTa) {
+      // 심사의견: 글 안에서는 커서 이동, 경계에서는 셀 이동 (엑셀식)
+      const s = el.selectionStart, se = el.selectionEnd, v = el.value;
+      if (s !== se) return;                                         // 드래그 선택 중엔 관여 안 함
+      if (key === 'ArrowUp' && v.lastIndexOf('\n', s - 1) === -1) go(r - 1, c);
+      else if (key === 'ArrowDown' && v.indexOf('\n', s) === -1) go(r + 1, c);
+      else if (key === 'ArrowLeft' && s === 0) go(r, c - 1);
+      else if (key === 'ArrowRight' && s === v.length) go(r, c + 1);
+      return;
+    }
     const len = el.value.length;
     const allSel = el.selectionStart === 0 && el.selectionEnd === len && len > 0;
     if (key === 'ArrowDown') go(r + 1, c);
