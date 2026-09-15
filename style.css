@@ -186,6 +186,85 @@ table.grid td:focus-within { outline: 2px solid var(--accent); outline-offset: -
   border-radius: 999px; z-index: 200; box-shadow: 0 4px 14px rgba(0,0,0,.25);
 }
 
+/* ================= 모바일 (폰·태블릿 세로) ================= */
+@media screen and (max-width: 860px) {
+  body { font-size: 15px; }
+  .topbar { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+  .topbar .brand { flex-basis: 100%; }
+  .topbar .brand small { display: block; margin: 2px 0 0; }
+  .btn { padding: 10px 14px; }
+  .savestat { min-width: 0; }
+  .landing { margin: 36px 14px; padding: 26px 20px; }
+
+  .paper { width: auto; margin: 10px 8px 90px; padding: 14px 12px; border-radius: 14px; }
+  .p-title { font-size: 15px; padding: 10px 8px; line-height: 1.45; border-radius: 8px; }
+  .p-info { justify-content: stretch; margin: 10px 0; }
+  .p-info table { width: 100%; }
+  .p-info td { min-width: 0; }
+  .criteria-panel { width: auto; margin: 12px 8px 0; }
+
+  /* ── 점수표 → 팀 카드 ── */
+  table.score, table.score tbody { display: block; }
+  table.score thead { display: none; }
+  table.score tr {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    border: 1px solid #d7dce3; border-radius: 14px;
+    padding: 12px; margin-bottom: 12px; background: #fff;
+    box-shadow: 0 1px 5px rgba(0,0,0,.05);
+  }
+  table.score td { display: block; border: none !important; text-align: left; width: auto !important; }
+  table.score td.c-no {
+    background: var(--navy); color: #fff; font-weight: 700;
+    border-radius: 8px; padding: 4px 11px; font-size: 13px;
+  }
+  table.score td.c-no::after { content: '번'; }
+  table.score td.c-unit, table.score td.c-name {
+    background: #eef1f5; border-radius: 8px; padding: 4px 10px; font-size: 13px;
+  }
+  table.score td.c-unit:empty, table.score td.c-name:empty, table.score td.c-pname:empty { display: none; }
+  table.score td.c-pname {
+    width: 100% !important; font-weight: 700; font-size: 16px; line-height: 1.45;
+    background: none; padding: 2px 2px 0;
+  }
+  table.score td.crit {
+    width: calc(50% - 4px) !important;
+    border: 1px solid #d7dce3 !important; border-radius: 10px; overflow: hidden;
+    background: #fff; padding: 0;
+  }
+  table.score td.crit::before {
+    content: attr(data-l); display: block; font-size: 12px; color: #48505c;
+    background: var(--green); padding: 6px 8px; font-weight: 700; text-align: center;
+  }
+  table.score td.crit input { font-size: 19px; padding: 11px 4px; }
+  table.score td.total {
+    width: 100% !important; background: #fdf9e8 !important;
+    border: 1px solid #eadfa8 !important; border-radius: 10px;
+    padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 18px;
+  }
+  table.score td.total::before { content: '총점'; font-size: 13px; color: #6b7280; font-weight: 700; }
+  table.score td.cmt {
+    width: 100% !important; border: 1px solid #d7dce3 !important;
+    border-radius: 10px; overflow: hidden; padding: 0;
+  }
+  table.score td.cmt::before {
+    content: attr(data-l); display: block; font-size: 12px; color: #48505c;
+    background: #f1f3f6; padding: 6px 8px; font-weight: 700;
+  }
+  table.score td.cmt textarea { min-height: 70px; font-size: 16px; }
+  table.score .cell:focus-within { border-color: var(--accent) !important; outline: 1.5px solid var(--accent); outline-offset: 0; border-radius: 10px; }
+
+  .p-confirm { font-size: 12px; }
+  .p-sign table { width: 100%; }
+  .p-sign th { padding: 6px 10px; }
+  .p-sign td.sigbox { width: auto; }
+
+  .admin-wrap { width: 100%; padding: 0 8px; }
+  .admin-section { overflow-x: auto; }
+
+  .modal { max-width: 100%; }
+}
+
 /* ================= 인쇄 ================= */
 @page { size: A4 portrait; margin: 9mm; }
 @media print {

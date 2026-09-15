@@ -378,17 +378,18 @@ async function renderJudge(judge) {
     const sc = scores[t.no] || { vals: [], comment: '' };
     const cells = SET.criteria.map((c, ci) => {
       const v = sc.vals[ci] == null ? '' : sc.vals[ci];
-      return '<td class="cell"><input class="score" inputmode="numeric" data-r="' + i +
+      return '<td class="cell crit" data-l="' + esc(c.name) + ' (' + c.max + ')">' +
+        '<input class="score" inputmode="numeric" data-r="' + i +
         '" data-c="' + ci + '" data-no="' + t.no + '" data-max="' + c.max + '" value="' + esc(v) + '"></td>';
     }).join('');
     return '<tr>' +
-      '<td class="ro" style="width:34px">' + t.no + '</td>' +
-      '<td class="ro" style="width:58px">' + esc(t.unit) + '</td>' +
-      '<td class="ro" style="width:64px">' + esc(t.name) + '</td>' +
-      '<td class="ro" style="width:104px">' + esc(t.pname) + '</td>' +
+      '<td class="ro c-no" style="width:34px">' + t.no + '</td>' +
+      '<td class="ro c-unit" style="width:58px">' + esc(t.unit) + '</td>' +
+      '<td class="ro c-name" style="width:64px">' + esc(t.name) + '</td>' +
+      '<td class="ro c-pname" style="width:104px">' + esc(t.pname) + '</td>' +
       cells +
       '<td class="total" style="width:52px" id="tot-' + t.no + '"></td>' +
-      '<td class="cell"><textarea rows="1" data-r="' + i + '" data-c="' + nC +
+      '<td class="cell cmt" data-l="심사의견"><textarea rows="1" data-r="' + i + '" data-c="' + nC +
         '" data-no="' + t.no + '">' + esc(sc.comment) + '</textarea></td>' +
       '</tr>';
   }).join('');
