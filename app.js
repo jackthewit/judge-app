@@ -812,6 +812,19 @@ async function renderFinal(readOnly, viewer) {
       '<table class="grid" id="finTable" style="margin-top:8px"><thead><tr>' +
         head.map((h, i) => '<th' + (i === 4 ? '' : ' style="width:' + (i === 0 ? 42 : i === 1 ? 40 : i === 2 ? 64 : i === 3 ? 76 : 62) + 'px"') + '>' + esc(h) + '</th>').join('') +
       '</tr></thead><tbody>' + rowsHtml + '</tbody></table>' +
+      (() => {
+        const chair = judges.find(j => j.role === '심사위원장');
+        const canOpinion = !readOnly || (viewer && viewer.role === '심사위원장');
+        const opText = SET.finalOpinion || '';
+        return '<div class="fin-op">' +
+          '<div class="fin-op-head">종합 의견 <small>(심사위원장' + (chair ? ' ' + esc(chair.name) : '') + ' 작성)</small>' +
+          (canOpinion ? '<span id="opStat" class="no-print" style="float:right;font-weight:400;color:#16a34a;font-size:12px"></span>' : '') +
+          '</div>' +
+          (canOpinion
+            ? '<textarea id="finOpinion" placeholder="심사위원장 종합 의견을 입력하세요 (자동 저장)">' + esc(opText) + '</textarea>'
+            : '<div class="fin-op-view">' + esc(opText).replace(/\n/g, '<br>') + '</div>') +
+          '</div>';
+      })() +
       '<div class="p-bottom">' +
         '<div class="p-confirm" style="margin-top:16px">위와 같이 「' + esc(SET.eventTitle) + '」 심사 결과를 심의하여 의결합니다.</div>' +
         '<div class="p-date">' + esc(SET.dateLine) + '</div>' +
@@ -846,6 +859,34 @@ async function renderFinal(readOnly, viewer) {
   }
   recompute();
 
+  /* 종합 의견 자동 저장 (관리자 + 심사위원장) — 다른 항목과의 충돌을 줄이기 위해 최신 데이터에 의견만 반영 */
+  const opEl = document.getElementById('finOpinion');
+  if (opEl) {
+    const opStat = msg => {
+      const s = document.getElementById('opStat');
+      if (s) s.textContent = msg;
+    };
+    autoGrow(opEl);
+    let opTimer = null;
+    opEl.addEventListener('input', () => {
+      autoGrow(opEl);
+      opStat('저장 중…');
+      clearTimeout(opTimer);
+      opTimer = setTimeout(async () => {
+        try {
+          const d = await store.getProject(PROJ);
+          d.finalOpinion = opEl.value;
+          await store.saveProject(PROJ, d);
+          SET.finalOpinion = opEl.value;
+          opStat('자동 저장됨 ✓');
+        } catch (e) {
+          console.error(e);
+          opStat('저장 실패!');
+        }
+      }, 800);
+    });
+  }
+
   if (readOnly) {
     document.getElementById('btnBackJudge').addEventListener('click', () => {
       location.href = judgeUrl(PROJ, viewer.token);
@@ -868,7 +909,11 @@ async function renderFinal(readOnly, viewer) {
     saveTimer = setTimeout(async () => {
       try {
         if (SET.finalLog.length > 800) SET.finalLog = SET.finalLog.slice(-800);
-        await store.saveProject(PROJ, SET);
+        const d = await store.getProject(PROJ);   // 위원장이 쓰는 종합 의견 등 최신 값 유지
+        d.finalOverrides = SET.finalOverrides;
+        d.finalLog = SET.finalLog;
+        await store.saveProject(PROJ, d);
+        SET.finalOpinion = d.finalOpinion;
         finstat.textContent = '저장됨 ✓';
         finstat.className = 'savestat saved';
       } catch (err) {
