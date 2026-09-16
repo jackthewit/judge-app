@@ -177,6 +177,26 @@ table.grid td:focus-within { outline: 2px solid var(--accent); outline-offset: -
 .sigstat-ok { color: #16a34a; font-weight: 700; }
 .sigstat-no { color: #b91c1c; }
 
+/* 최종 심의위원회 (의결서) */
+table.grid td.fincell { padding: 0; }
+table.grid input.fin { width: 100%; border: none; background: none; font: inherit; text-align: center; padding: 6px 2px; outline: none; }
+table.grid td.fincell:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
+table.grid td.ovr { background: #fff3e0; }
+table.grid td.ovr input.fin { color: #b45309; font-weight: 700; }
+.fin-sign-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px;
+}
+.fin-sig-card {
+  border: 1px solid var(--line); border-radius: 4px; padding: 10px 8px; text-align: center;
+}
+.fin-sig-card .fs-name { font-weight: 700; font-size: 13.5px; }
+.fin-sig-card .fs-name small { font-weight: 400; color: #6b7280; }
+.fin-sig-card .fs-img { min-height: 52px; display: flex; align-items: center; justify-content: center; margin-top: 4px; }
+.fin-sig-card .fs-img img { max-height: 50px; max-width: 90%; }
+.fin-sig-card .fs-img .placeholder { color: #c3c9d2; font-size: 12px; }
+.fin-sig-card .fs-qr { display: flex; justify-content: center; margin-top: 6px; }
+.fin-sig-card .fs-qr img, .fin-sig-card .fs-qr canvas { border: 1px solid #eee; padding: 4px; background: #fff; }
+
 .landing { max-width: 520px; margin: 80px auto; background: #fff; border-radius: 16px; padding: 34px; text-align: center; box-shadow: 0 3px 16px rgba(0,0,0,.07); }
 .landing h1 { font-size: 19px; margin-bottom: 10px; }
 .landing p { color: #6b7280; font-size: 13.5px; line-height: 1.8; }
@@ -297,4 +317,11 @@ table.grid td:focus-within { outline: 2px solid var(--accent); outline-offset: -
   .admin-section { border: none; padding: 0; }
   .admin-section.print-hide { display: none !important; }
   table.grid { font-size: 9.5px; }
+  /* 의결서 인쇄 */
+  table.grid input.fin { font-size: 10px; padding: 3px 1px; }
+  table.grid tr { page-break-inside: avoid; }
+  .fin-sign-grid { gap: 6px; }
+  .fin-sig-card { padding: 6px; }
+  .fin-sig-card .fs-img { min-height: 44px; }
+  .fin-sig-card .fs-img .placeholder { visibility: hidden; }
 }

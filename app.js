@@ -210,6 +210,7 @@ function judgeByToken(tok) { return SET.judges.find(j => j.token === tok) || nul
 function namedJudges() { return SET.judges.filter(j => j.name); }
 /* 대회명 (없으면 심사표 제목으로 대체 — 기존 프로젝트 호환) */
 const compNameOf = d => d.compName || d.eventTitle || '(제목 없음)';
+const finalPid = pid => pid + '#final';   // 최종 심의 서명은 심사표 서명과 분리 저장
 const divNameOf = d => d.category || d.eventTitle || '(부문 없음)';
 
 async function teamsFilled() {
@@ -675,15 +676,19 @@ function openSignModal(judge, rowState, teams, showSig, setLock) {
 
 /* ─────────────────────── 모바일 서명 페이지 ─────────────────────── */
 
-function renderSignPage(judge) {
+function renderSignPage(judge, isFinal) {
+  const targetPid = isFinal ? finalPid(PROJ) : PROJ;
   $app.innerHTML =
     '<div class="sign-page"><div class="sign-card">' +
       '<div id="signView">' +
-        '<h1>✍️ 심사위원 서명</h1>' +
-        '<div class="who">' + esc(SET.eventTitle) + '<br><b>' + esc(judge.name) + '</b> ' + esc(judge.role) + '님, 아래에 서명해주세요.</div>' +
+        '<h1>' + (isFinal ? '🏛 최종 심의 의결 서명' : '✍️ 심사위원 서명') + '</h1>' +
+        '<div class="who">' + esc(SET.eventTitle) + (isFinal ? '<br>최종 심사 결과 심의·의결 서명입니다.' : '') +
+          '<br><b>' + esc(judge.name) + '</b> ' + esc(judge.role) + '님, 아래에 서명해주세요.</div>' +
         '<div id="padMount"></div>' +
         '<div style="font-size:11px;color:#9ca3af;text-align:left;line-height:1.5;margin-bottom:10px">' +
-          '서명을 제출하면 심사 결과를 본인이 직접 심사·확인하였고, 이 전자서명이 자필 서명과 동일한 효력을 갖는 것에 동의한 것으로 봅니다. (전자서명법 제3조)</div>' +
+          (isFinal
+            ? '서명을 제출하면 위 부문의 최종 심사 결과를 심의하여 의결하는 데 동의한 것으로 보며, 이 전자서명은 자필 서명과 동일한 효력을 갖습니다. (전자서명법 제3조)'
+            : '서명을 제출하면 심사 결과를 본인이 직접 심사·확인하였고, 이 전자서명이 자필 서명과 동일한 효력을 갖는 것에 동의한 것으로 봅니다. (전자서명법 제3조)') + '</div>' +
         '<div style="display:flex;gap:8px">' +
           '<button class="btn" id="sClear" style="flex:1;padding:13px 0">다시 쓰기</button>' +
           '<button class="btn primary" id="sSubmit" style="flex:2;padding:13px 0" disabled>서명 제출</button>' +
@@ -692,7 +697,7 @@ function renderSignPage(judge) {
       '</div>' +
       '<div class="done-view" id="doneView" style="display:none">' +
         '<div class="big">✅</div><h1>서명이 등록되었습니다</h1>' +
-        '<div class="who" style="margin-top:8px">심사표에 반영되었습니다.<br>이 창은 닫으셔도 됩니다.</div>' +
+        '<div class="who" style="margin-top:8px">' + (isFinal ? '의결서에 반영되었습니다.' : '심사표에 반영되었습니다.') + '<br>이 창은 닫으셔도 됩니다.</div>' +
       '</div>' +
     '</div></div>';
 
@@ -709,7 +714,7 @@ function renderSignPage(judge) {
     if (!png) return;
     this.disabled = true; this.textContent = '등록 중…';
     try {
-      await store.saveSignature(PROJ, judge.id, png);
+      await store.saveSignature(targetPid, judge.id, png);
       document.getElementById('signView').style.display = 'none';
       document.getElementById('doneView').style.display = 'block';
     } catch (e) {
@@ -720,6 +725,213 @@ function renderSignPage(judge) {
       err.style.display = 'block';
     }
   });
+}
+
+/* ─────────────────────── 최종 심의위원회 (의결서) ─────────────────────── */
+
+async function renderFinal() {
+  const teams = await teamsFilled();
+  const judges = namedJudges();
+  const all = await store.getAllScores(PROJ, judges.map(j => j.id));
+  SET.finalOverrides = SET.finalOverrides || {};
+
+  const baseTotal = (jid, no) => {
+    const sc = (all[jid] || {})[no];
+    if (!sc) return null;
+    const nums = SET.criteria.map((c, i) => sc.vals[i]).filter(v => v != null && v !== '');
+    return nums.length ? nums.reduce((a, v) => a + Number(v), 0) : null;
+  };
+  const effTotal = (jid, no) => {
+    const o = (SET.finalOverrides[no] || {})[jid];
+    return (o === undefined || o === null || o === '') ? baseTotal(jid, no) : Number(o);
+  };
+
+  const head = ['순위', '연번', '개인/단체', '대표자 성명', '프로젝트명']
+    .concat(judges.map(j => j.name)).concat(['합계', '평균']);
+  const rowsHtml = teams.map((t, ri) =>
+    '<tr>' +
+    '<td class="hl" id="frank-' + t.no + '"></td>' +
+    '<td>' + t.no + '</td><td>' + esc(t.unit) + '</td><td>' + esc(t.name) + '</td>' +
+    '<td style="text-align:left">' + esc(t.pname) + '</td>' +
+    judges.map((j, ci) => {
+      const v = effTotal(j.id, t.no);
+      return '<td class="fincell"><input class="fin" inputmode="numeric" data-r="' + ri + '" data-c="' + ci +
+        '" data-no="' + t.no + '" data-jid="' + j.id + '" value="' + (v === null ? '' : v) + '"></td>';
+    }).join('') +
+    '<td class="hl" id="fsum-' + t.no + '"></td>' +
+    '<td class="hl" id="favg-' + t.no + '"></td>' +
+    '</tr>').join('');
+
+  const sigCards = judges.map(j =>
+    '<div class="fin-sig-card">' +
+      '<div class="fs-name">' + esc(j.name) + ' <small>' + esc(j.role) + '</small></div>' +
+      '<div class="fs-img" id="fsig-' + j.id + '"><span class="placeholder">(서명)</span></div>' +
+      '<div class="no-print fs-qr" id="fqr-' + j.id + '"></div>' +
+      '<button class="btn no-print fs-here" data-jid="' + j.id + '" style="font-size:12px;padding:6px 10px;margin-top:6px">이 기기에서 서명</button>' +
+    '</div>').join('');
+
+  $app.innerHTML =
+    '<div class="topbar no-print">' +
+      '<span class="brand">🏛 최종 심의위원회<small>' + esc(compNameOf(SET) + ' — ' + divNameOf(SET)) + '</small></span>' +
+      '<span class="savestat" id="finstat"></span>' +
+      '<button class="btn" id="btnBack">← 관리자로</button>' +
+      '<button class="btn primary" id="btnPrintFinal" title="인쇄 대화상자에서 PDF로 저장 선택 가능">🖨 의결서 인쇄 · PDF</button>' +
+    '</div>' +
+    '<div class="paper" style="width:auto;max-width:277mm">' +
+      '<div class="p-title">' + esc(compNameOf(SET)) + ' ' + esc(divNameOf(SET)) + ' 최종 심사 결과 의결서</div>' +
+      '<div class="no-print" style="font-size:12px;color:#888;margin:8px 0">점수 칸을 클릭해 직접 수정할 수 있습니다. 수정된 점수는 주황색으로 표시되며 위원별 심사표 원본은 바뀌지 않습니다. 원래 점수로 되돌리려면 칸을 비우세요.</div>' +
+      '<table class="grid" id="finTable" style="margin-top:8px"><thead><tr>' +
+        head.map((h, i) => '<th' + (i === 4 ? '' : ' style="width:' + (i === 0 ? 42 : i === 1 ? 40 : i === 2 ? 64 : i === 3 ? 76 : 62) + 'px"') + '>' + esc(h) + '</th>').join('') +
+      '</tr></thead><tbody>' + rowsHtml + '</tbody></table>' +
+      '<div class="p-bottom">' +
+        '<div class="p-confirm" style="margin-top:16px">위와 같이 「' + esc(SET.eventTitle) + '」 심사 결과를 심의하여 의결합니다.</div>' +
+        '<div class="p-date">' + esc(SET.dateLine) + '</div>' +
+        '<div class="fin-sign-grid">' + sigCards + '</div>' +
+      '</div>' +
+    '</div>';
+
+  document.getElementById('btnBack').addEventListener('click', () => {
+    location.href = appUrl('?admin=1&p=' + encodeURIComponent(PROJ));
+  });
+  document.getElementById('btnPrintFinal').addEventListener('click', () => window.print());
+
+  const table = document.getElementById('finTable');
+  bindGridNav(table);
+
+  /* 합계·평균·순위 재계산 */
+  function recompute() {
+    const rows = teams.map(t => {
+      const vals = judges.map(j => effTotal(j.id, t.no)).filter(v => v !== null && !isNaN(v));
+      return {
+        no: t.no,
+        sum: vals.length ? vals.reduce((a, v) => a + v, 0) : null,
+        avg: vals.length ? vals.reduce((a, v) => a + v, 0) / vals.length : null,
+      };
+    });
+    const sorted = rows.filter(r => r.avg !== null).map(r => r.avg).sort((a, b) => b - a);
+    rows.forEach(r => {
+      document.getElementById('fsum-' + r.no).textContent = r.sum === null ? '' : r.sum;
+      document.getElementById('favg-' + r.no).textContent = r.avg === null ? '' : Math.round(r.avg * 100) / 100;
+      document.getElementById('frank-' + r.no).textContent = r.avg === null ? '' : sorted.indexOf(r.avg) + 1;
+    });
+    /* 수정 표시 */
+    table.querySelectorAll('input.fin').forEach(inp => {
+      const no = +inp.dataset.no, jid = +inp.dataset.jid;
+      const o = (SET.finalOverrides[no] || {})[jid];
+      const isOvr = !(o === undefined || o === null || o === '');
+      inp.closest('td').classList.toggle('ovr', isOvr);
+      inp.title = isOvr ? '원점수: ' + (baseTotal(jid, no) === null ? '없음' : baseTotal(jid, no)) : '';
+    });
+  }
+  recompute();
+
+  /* 점수 수정 → finalOverrides에 저장 (원본 심사표는 유지) */
+  const finstat = document.getElementById('finstat');
+  let saveTimer = null;
+  table.addEventListener('input', e => {
+    const inp = e.target;
+    if (!inp.classList.contains('fin')) return;
+    inp.value = inp.value.replace(/[^\d]/g, '');
+    const max = totalMax();
+    if (inp.value !== '' && Number(inp.value) > max) inp.value = String(max);
+    const no = +inp.dataset.no, jid = +inp.dataset.jid;
+    const base = baseTotal(jid, no);
+    const v = inp.value === '' ? null : Number(inp.value);
+    if (v === null || v === base) {
+      if (SET.finalOverrides[no]) {
+        delete SET.finalOverrides[no][jid];
+        if (!Object.keys(SET.finalOverrides[no]).length) delete SET.finalOverrides[no];
+      }
+      if (v === null && base !== null) inp.value = String(base);   // 비우면 원점수 복원
+    } else {
+      (SET.finalOverrides[no] = SET.finalOverrides[no] || {})[jid] = v;
+    }
+    recompute();
+    finstat.textContent = '저장 중…';
+    finstat.className = 'savestat saving';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+      try {
+        await store.saveProject(PROJ, SET);
+        finstat.textContent = '저장됨 ✓';
+        finstat.className = 'savestat saved';
+      } catch (err) {
+        console.error(err);
+        finstat.textContent = '저장 실패!';
+        finstat.className = 'savestat';
+      }
+    }, 800);
+  });
+
+  /* 위원별 QR + 서명 표시 */
+  judges.forEach(j => {
+    const link = judgeUrl(PROJ, j.token, '&sign=1&final=1');
+    new QRCode(document.getElementById('fqr-' + j.id), { text: link, width: 96, height: 96 });
+  });
+  const refreshSigs = async () => {
+    for (const j of judges) {
+      try {
+        const png = await store.getSignature(finalPid(PROJ), j.id);
+        const box = document.getElementById('fsig-' + j.id);
+        if (png && box && !box.querySelector('img')) {
+          box.innerHTML = '<img src="' + png + '" alt="서명">';
+        }
+      } catch (e) { /* 무시 */ }
+    }
+  };
+  refreshSigs();
+  clearInterval(window.__finSigTimer);
+  window.__finSigTimer = setInterval(() => {
+    if (document.getElementById('finTable')) refreshSigs();
+    else clearInterval(window.__finSigTimer);
+  }, 5000);
+
+  /* 이 기기에서 서명 */
+  $app.querySelectorAll('.fs-here').forEach(b => b.addEventListener('click', () => {
+    const judge = judges.find(j => j.id === +b.dataset.jid);
+    const back = document.createElement('div');
+    back.className = 'modal-back no-print';
+    back.innerHTML =
+      '<div class="modal"><h2>최종 심의 의결 서명</h2>' +
+      '<div class="sub"><b>' + esc(judge.name) + '</b> ' + esc(judge.role) + ' — 마우스/터치로 서명해주세요.</div>' +
+      '<div id="fpadMount"></div>' +
+      '<div style="font-size:11px;color:#9ca3af;text-align:left;line-height:1.5;margin-bottom:10px">' +
+        '서명을 등록하면 위 최종 심사 결과를 심의하여 의결하는 데 동의한 것으로 보며, 이 전자서명은 자필 서명과 동일한 효력을 갖습니다. (전자서명법 제3조)</div>' +
+      '<div class="btnrow">' +
+        '<button class="btn" id="fmClear">다시 쓰기</button>' +
+        '<button class="btn primary" id="fmSubmit" disabled>서명 등록</button>' +
+      '</div><div class="err" id="fmErr" style="display:none"></div>' +
+      '<button class="btn" id="fmClose" style="width:100%;margin-top:8px">닫기</button></div>';
+    document.body.appendChild(back);
+    const close = () => back.remove();
+    back.addEventListener('click', e => { if (e.target === back) close(); });
+    back.querySelector('#fmClose').addEventListener('click', close);
+    const pad = createSignPad(back.querySelector('#fpadMount'));
+    back.querySelector('#fpadMount').addEventListener('drawn', () => {
+      back.querySelector('#fmSubmit').disabled = false;
+    });
+    back.querySelector('#fmClear').addEventListener('click', () => {
+      pad.clear();
+      back.querySelector('#fmSubmit').disabled = true;
+    });
+    back.querySelector('#fmSubmit').addEventListener('click', async function () {
+      const png = pad.trimmedPng();
+      if (!png) return;
+      this.disabled = true; this.textContent = '등록 중…';
+      try {
+        await store.saveSignature(finalPid(PROJ), judge.id, png);
+        document.getElementById('fsig-' + judge.id).innerHTML = '<img src="' + png + '" alt="서명">';
+        close();
+        toast('✅ ' + judge.name + ' 위원의 의결 서명이 등록되었습니다.');
+      } catch (e) {
+        console.error(e);
+        this.disabled = false; this.textContent = '서명 등록';
+        const err = back.querySelector('#fmErr');
+        err.textContent = '등록 실패: ' + (e.message || e);
+        err.style.display = 'block';
+      }
+    });
+  }));
 }
 
 /* ─────────────────────── 관리자 화면 ─────────────────────── */
@@ -745,6 +957,7 @@ async function renderAdmin(projects) {
       '<span style="flex:1"></span>' +
       '<button class="btn" id="btnReload">🔄 새로고침</button>' +
       '<button class="btn" id="btnXlsx">📊 엑셀 저장</button>' +
+      '<button class="btn" id="btnFinal">🏛 최종 심의위원회</button>' +
       '<button class="btn primary" id="btnPrintSum" title="인쇄 대화상자에서 \'PDF로 저장\' 선택 시 PDF로 저장됩니다">🖨 취합 인쇄 · PDF</button>' +
       '<button class="btn" id="btnLogout" title="관리자 로그아웃">로그아웃</button>' +
     '</div>' +
@@ -803,6 +1016,9 @@ async function renderAdmin(projects) {
   });
   document.getElementById('btnReload').addEventListener('click', () => location.reload());
   document.getElementById('btnPrintSum').addEventListener('click', () => window.print());
+  document.getElementById('btnFinal').addEventListener('click', () => {
+    location.href = appUrl('?admin=1&p=' + encodeURIComponent(PROJ) + '&final=1');
+  });
   document.getElementById('btnXlsx').addEventListener('click', exportXlsx);
   document.getElementById('btnLogout').addEventListener('click', () => {
     if (confirm('관리자에서 로그아웃할까요?')) adminLogout();
@@ -1495,7 +1711,7 @@ function renderAdminLogin() {
         $app.innerHTML = '<div class="landing"><h1>⏳ 아직 공개되지 않은 심사입니다</h1><p>운영자가 공개하면 입장할 수 있습니다.</p><p><a href="' + esc(appUrl('')) + '">로그인 화면으로</a></p></div>';
         return;
       }
-      if (params.get('sign')) renderSignPage(judge);
+      if (params.get('sign')) renderSignPage(judge, !!params.get('final'));
       else renderJudge(judge);
       return;
     }
@@ -1508,7 +1724,8 @@ function renderAdminLogin() {
       const projects = await ensureAnyProject();
       const target = (pid && projects.some(p => p.id === pid)) ? pid : projects[0].id;
       await loadProject(target);
-      renderAdmin(projects);
+      if (params.get('final')) renderFinal();
+      else renderAdmin(projects);
       return;
     }
 
