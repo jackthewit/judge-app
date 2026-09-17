@@ -19,8 +19,9 @@ create table if not exists teams (
   pname      text default '',
   primary key (project_id, no)
 );
--- 기존 DB에 pname 열 추가용:
+-- 기존 DB에 열 추가용:
 alter table teams add column if not exists pname text default '';
+alter table teams add column if not exists school text default '';   -- 상피제용 학교
 
 -- 위원별 점수
 create table if not exists scores (

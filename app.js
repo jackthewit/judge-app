@@ -210,6 +210,12 @@ function judgeByToken(tok) { return SET.judges.find(j => j.token === tok) || nul
 function namedJudges() { return SET.judges.filter(j => j.name); }
 /* 대회명 (없으면 심사표 제목으로 대체 — 기존 프로젝트 호환) */
 const compNameOf = d => d.compName || d.eventTitle || '(제목 없음)';
+/* 상피제: 심사위원 소속(org)과 팀 학교(school)가 같으면 해당 팀 평가 제외 */
+const orgKey = s => String(s || '').replace(/\s+/g, '').replace(/대학교.*$/, '대');
+const isConflict = (j, t) => {
+  const a = orgKey(j && j.org), b = orgKey(t && t.school);
+  return !!a && !!b && a === b;
+};
 const divNameOf = d => d.category || d.eventTitle || '(부문 없음)';
 
 async function teamsFilled() {
@@ -223,6 +229,7 @@ async function teamsFilled() {
       unit: (map[n] && map[n].unit) || '',
       name: (map[n] && map[n].name) || '',
       pname: (map[n] && map[n].pname) || '',
+      school: (map[n] && map[n].school) || '',
     });
   }
   return out;
@@ -242,7 +249,16 @@ function bindGridNav(container) {
     const r = +el.dataset.r, c = +el.dataset.c;
     const isTa = el.tagName === 'TEXTAREA';
     const go = (nr, nc) => {
-      const nxt = container.querySelector('[data-r="' + nr + '"][data-c="' + nc + '"]');
+      const dr = Math.sign(nr - r), dc = Math.sign(nc - c);
+      let tr2 = nr, tc = nc, nxt = null;
+      for (let step = 0; step < 100; step++) {
+        nxt = container.querySelector('[data-r="' + tr2 + '"][data-c="' + tc + '"]');
+        if (nxt && !nxt.disabled) break;
+        nxt = null;
+        if (dr === 0 && dc === 0) break;
+        tr2 += dr; tc += dc;
+        if (tr2 < 0 || tc < 0 || tr2 > 400 || tc > 60) break;
+      }
       if (nxt) {
         e.preventDefault();
         nxt.focus();
@@ -392,22 +408,31 @@ async function renderJudge(judge) {
     '<th style="width:64px">' + esc(c.name) + '<br><small>(' + c.max + ')</small></th>').join('');
 
   const rowsHtml = teams.map((t, i) => {
+    const excl = isConflict(judge, t);
     const sc = scores[t.no] || { vals: [], comment: '' };
-    const cells = SET.criteria.map((c, ci) => {
-      const v = sc.vals[ci] == null ? '' : sc.vals[ci];
-      return '<td class="cell crit" data-l="' + esc(c.name) + ' (' + c.max + ')">' +
-        '<input class="score" inputmode="numeric" data-r="' + i +
-        '" data-c="' + ci + '" data-no="' + t.no + '" data-max="' + c.max + '" value="' + esc(v) + '"></td>';
-    }).join('');
-    return '<tr>' +
+    const cells = excl
+      ? SET.criteria.map(c =>
+          '<td class="excl-cell crit" data-l="' + esc(c.name) + ' (' + c.max + ')">—</td>').join('')
+      : SET.criteria.map((c, ci) => {
+          const v = sc.vals[ci] == null ? '' : sc.vals[ci];
+          return '<td class="cell crit" data-l="' + esc(c.name) + ' (' + c.max + ')">' +
+            '<input class="score" inputmode="numeric" data-r="' + i +
+            '" data-c="' + ci + '" data-no="' + t.no + '" data-max="' + c.max + '" value="' + esc(v) + '"></td>';
+        }).join('');
+    return '<tr' + (excl ? ' class="excl"' : '') + '>' +
       '<td class="ro c-no" style="width:34px">' + t.no + '</td>' +
-      '<td class="ro c-unit" style="width:58px">' + esc(t.unit) + '</td>' +
-      '<td class="ro c-name" style="width:64px">' + esc(t.name) + '</td>' +
-      '<td class="ro c-pname" style="width:104px">' + esc(t.pname) + '</td>' +
+      '<td class="ro c-unit" style="width:50px">' + esc(t.unit) + '</td>' +
+      '<td class="ro c-school" style="width:52px">' + esc(t.school) + '</td>' +
+      '<td class="ro c-name" style="width:60px">' + esc(t.name) + '</td>' +
+      '<td class="ro c-pname" style="width:100px">' + esc(t.pname) + '</td>' +
       cells +
-      '<td class="total" style="width:52px" id="tot-' + t.no + '"></td>' +
-      '<td class="cell cmt" data-l="심사의견"><textarea rows="1" data-r="' + i + '" data-c="' + nC +
-        '" data-no="' + t.no + '">' + esc(sc.comment) + '</textarea></td>' +
+      (excl
+        ? '<td class="total excl-cell" style="width:52px" data-l="총점">제외</td>'
+        : '<td class="total" style="width:52px" id="tot-' + t.no + '"></td>') +
+      (excl
+        ? '<td class="excl-cell cmt" data-l="심사의견">상피제 제외 (동일 소속)</td>'
+        : '<td class="cell cmt" data-l="심사의견"><textarea rows="1" data-r="' + i + '" data-c="' + nC +
+          '" data-no="' + t.no + '">' + esc(sc.comment) + '</textarea></td>') +
       '</tr>';
   }).join('');
 
@@ -443,8 +468,9 @@ async function renderJudge(judge) {
         '<tr><th>심사일</th><td>' + esc(SET.dateText) + '</td></tr>' +
       '</table></div>' +
       '<table class="score" id="scoreTable"><thead><tr>' +
-        '<th style="width:34px">연번</th><th style="width:58px">개인/<br>단체</th>' +
-        '<th style="width:64px">대표자<br>성명</th><th style="width:104px">프로젝트명</th>' + headCols +
+        '<th style="width:34px">연번</th><th style="width:50px">개인/<br>단체</th>' +
+        '<th style="width:52px">학교</th>' +
+        '<th style="width:60px">대표자<br>성명</th><th style="width:100px">프로젝트명</th>' + headCols +
         '<th style="width:52px">총점</th><th>심사의견</th>' +
       '</tr></thead><tbody>' + rowsHtml + '</tbody></table>' +
       '<div class="p-bottom">' +
@@ -495,6 +521,7 @@ async function renderJudge(judge) {
   const dirty = {};
   const rowState = {};
   teams.forEach(t => {
+    if (isConflict(judge, t)) return;   // 상피제 팀은 입력 대상 아님
     const sc = scores[t.no] || { vals: [], comment: '' };
     rowState[t.no] = {
       vals: SET.criteria.map((c, i) => sc.vals[i] == null ? null : sc.vals[i]),
@@ -596,7 +623,7 @@ async function renderJudge(judge) {
 /* 심사완료 → QR/서명 모달 */
 function openSignModal(judge, rowState, teams, showSig, setLock) {
   const missing = teams.filter(t =>
-    rowState[t.no].vals.some(v => v === null || v === '')).map(t => t.no);
+    rowState[t.no] && rowState[t.no].vals.some(v => v === null || v === '')).map(t => t.no);
 
   const link = judgeUrl(PROJ, judge.token, '&sign=1');
   const back = document.createElement('div');
@@ -740,13 +767,20 @@ async function renderFinal(readOnly, viewer) {
   SET.finalOverrides = SET.finalOverrides || {};
   SET.finalLog = SET.finalLog || [];
 
+  const conflictOf = (jid, no) => {
+    const j = judges.find(x => x.id === jid);
+    const t = teams.find(x => x.no === no);
+    return isConflict(j, t);
+  };
   const baseTotal = (jid, no) => {
+    if (conflictOf(jid, no)) return null;   // 상피제: 점수가 있어도 반영 안 함
     const sc = (all[jid] || {})[no];
     if (!sc) return null;
     const nums = SET.criteria.map((c, i) => sc.vals[i]).filter(v => v != null && v !== '');
     return nums.length ? nums.reduce((a, v) => a + Number(v), 0) : null;
   };
   const effTotal = (jid, no) => {
+    if (conflictOf(jid, no)) return null;
     const o = (SET.finalOverrides[no] || {})[jid];
     return (o === undefined || o === null || o === '') ? baseTotal(jid, no) : Number(o);
   };
@@ -759,14 +793,17 @@ async function renderFinal(readOnly, viewer) {
     return t ? (t.name || t.pname || '') : '';
   };
 
-  const head = ['순위', '연번', '개인/단체', '대표자 성명', '프로젝트명']
+  const head = ['순위', '연번', '개인/단체', '학교', '대표자 성명', '프로젝트명']
     .concat(judges.map(j => j.name)).concat(['합계', '평균']);
   const rowsHtml = teams.map((t, ri) =>
     '<tr>' +
     '<td class="hl" id="frank-' + t.no + '"></td>' +
-    '<td>' + t.no + '</td><td>' + esc(t.unit) + '</td><td>' + esc(t.name) + '</td>' +
+    '<td>' + t.no + '</td><td>' + esc(t.unit) + '</td><td>' + esc(t.school) + '</td><td>' + esc(t.name) + '</td>' +
     '<td style="text-align:left">' + esc(t.pname) + '</td>' +
     judges.map((j, ci) => {
+      if (isConflict(j, t)) {
+        return '<td class="exclmark">제외</td>';
+      }
       const v = effTotal(j.id, t.no);
       const ov = isOvr(j.id, t.no);
       if (readOnly) {
@@ -810,7 +847,7 @@ async function renderFinal(readOnly, viewer) {
         ? '<div class="no-print" style="font-size:12px;color:#888;margin:8px 0">최종 심사 결과 확인용 화면입니다. 수정은 심의위원회에서 관리자만 할 수 있습니다.</div>'
         : '<div class="no-print" style="font-size:12px;color:#888;margin:8px 0">점수 칸을 클릭해 수정할 수 있습니다(모든 위원 입회하에). 수정된 점수는 주황색으로 표시되고 변경 기록에 남으며, 위원별 심사표 원본은 바뀌지 않습니다. 칸을 비우면 원점수로 복원됩니다.</div>') +
       '<table class="grid" id="finTable" style="margin-top:8px"><thead><tr>' +
-        head.map((h, i) => '<th' + (i === 4 ? '' : ' style="width:' + (i === 0 ? 42 : i === 1 ? 40 : i === 2 ? 64 : i === 3 ? 76 : 62) + 'px"') + '>' + esc(h) + '</th>').join('') +
+        head.map((h, i) => '<th' + (i === 5 ? '' : ' style="width:' + (i === 0 ? 42 : i === 1 ? 38 : i === 2 ? 58 : i === 3 ? 52 : i === 4 ? 70 : 60) + 'px"') + '>' + esc(h) + '</th>').join('') +
       '</tr></thead><tbody>' + rowsHtml + '</tbody></table>' +
       (() => {
         const chair = judges.find(j => j.role === '심사위원장');
@@ -1173,6 +1210,7 @@ function renderSettingsSection() {
         '<option' + (j.role === '심사위원' ? ' selected' : '') + '>심사위원</option>' +
       '</select></td>' +
       '<td><input class="jphone" data-i="' + i + '" inputmode="numeric" maxlength="4" placeholder="0000" value="' + esc(j.phone || '') + '"></td>' +
+      '<td><input class="jorg" data-i="' + i + '" placeholder="소속" value="' + esc(j.org || '') + '"></td>' +
       '<td><button class="copybtn jdel" data-i="' + i + '">삭제</button></td>' +
     '</tr>').join('');
 
@@ -1196,7 +1234,7 @@ function renderSettingsSection() {
     '</div>' +
     '<div style="display:grid;grid-template-columns:330px 1fr;gap:16px;align-items:start">' +
       '<div><h2 style="font-size:13px">심사위원 <small style="font-weight:400;color:#888">(전화 뒤 4자리 = 로그인 번호)</small></h2>' +
-        '<table class="grid"><thead><tr><th>이름</th><th style="width:100px">직책</th><th style="width:66px">전화 뒤4</th><th style="width:52px"></th></tr></thead>' +
+        '<table class="grid"><thead><tr><th>이름</th><th style="width:96px">직책</th><th style="width:60px">전화 뒤4</th><th style="width:76px">소속<br><small>(상피제)</small></th><th style="width:52px"></th></tr></thead>' +
         '<tbody id="judgeBody">' + judgeRows + '</tbody></table>' +
         '<button class="btn" id="jAdd" style="margin-top:8px;font-size:12px;padding:6px 12px">＋ 심사위원 추가</button></div>' +
       '<div><h2 style="font-size:13px">평가항목 <small style="font-weight:400;color:#888">(배점 합계: <b id="maxSum">' + totalMax() + '</b>점)</small></h2>' +
@@ -1244,6 +1282,7 @@ function renderSettingsSection() {
         name: tr.querySelector('.jname').value.trim(),
         role: tr.querySelector('.jrole').value,
         phone: tr.querySelector('.jphone').value.replace(/\D/g, '').slice(0, 4),
+        org: tr.querySelector('.jorg').value.trim(),
         token: old ? old.token : randToken(),
       });
     });
@@ -1332,8 +1371,9 @@ function renderTeamsSection(teams) {
   const rows = teams.map((t, i) =>
     '<tr><td style="width:44px">' + t.no + '</td>' +
     '<td><input data-r="' + i + '" data-c="0" data-no="' + t.no + '" value="' + esc(t.unit) + '"></td>' +
-    '<td><input data-r="' + i + '" data-c="1" data-no="' + t.no + '" value="' + esc(t.name) + '"></td>' +
-    '<td><input data-r="' + i + '" data-c="2" data-no="' + t.no + '" value="' + esc(t.pname) + '"></td>' +
+    '<td><input data-r="' + i + '" data-c="1" data-no="' + t.no + '" value="' + esc(t.school) + '"></td>' +
+    '<td><input data-r="' + i + '" data-c="2" data-no="' + t.no + '" value="' + esc(t.name) + '"></td>' +
+    '<td><input data-r="' + i + '" data-c="3" data-no="' + t.no + '" value="' + esc(t.pname) + '"></td>' +
     '<td style="white-space:nowrap">' +
       '<button class="copybtn tmove" data-no="' + t.no + '" data-dir="-1" title="위로"' + (i === 0 ? ' disabled' : '') + '>▲</button>' +
       '<button class="copybtn tmove" data-no="' + t.no + '" data-dir="1" title="아래로"' + (i === teams.length - 1 ? ' disabled' : '') + '>▼</button>' +
@@ -1342,8 +1382,8 @@ function renderTeamsSection(teams) {
   el.innerHTML =
     '<h2>👥 팀 명단 <small style="font-weight:400;color:#888">— 모든 심사표에 공통 표시되며 실시간 자동 저장됩니다</small> ' +
     '<span id="teamStat" style="font-size:12px;color:#16a34a;font-weight:400"></span></h2>' +
-    '<table class="grid" style="max-width:760px"><thead><tr><th style="width:44px">연번</th>' +
-    '<th style="width:120px">개인/단체</th><th style="width:130px">대표자 성명</th>' +
+    '<table class="grid" style="max-width:860px"><thead><tr><th style="width:44px">연번</th>' +
+    '<th style="width:96px">개인/단체</th><th style="width:96px">학교<br><small>(상피제)</small></th><th style="width:110px">대표자 성명</th>' +
     '<th>프로젝트명</th><th style="width:76px">순서</th></tr></thead><tbody id="teamBody">' + rows + '</tbody></table>' +
     '<div style="font-size:11.5px;color:#888;margin-top:6px">▲▼로 발표 순서를 바꿀 수 있습니다 (연번은 유지, 팀 내용이 이동). ' +
     '⚠️ 이미 입력된 점수는 연번에 붙어 있으니 순서 변경은 심사 시작 전에 해주세요.</div>';
@@ -1357,7 +1397,7 @@ function renderTeamsSection(teams) {
     const i = list.findIndex(t => t.no === +b.dataset.no);
     const j = i + Number(b.dataset.dir);
     if (i < 0 || j < 0 || j >= list.length) return;
-    ['unit', 'name', 'pname'].forEach(k => {
+    ['unit', 'school', 'name', 'pname'].forEach(k => {
       const tmp = list[i][k];
       list[i][k] = list[j][k];
       list[j][k] = tmp;
@@ -1380,8 +1420,9 @@ function renderTeamsSection(teams) {
       out.push({
         no: +inputs[0].dataset.no,
         unit: inputs[0].value.trim(),
-        name: inputs[1].value.trim(),
-        pname: inputs[2].value.trim(),
+        school: inputs[1].value.trim(),
+        name: inputs[2].value.trim(),
+        pname: inputs[3].value.trim(),
       });
     });
     return out;
@@ -1410,6 +1451,7 @@ function renderTeamsSection(teams) {
 async function renderLinksSection() {
   const el = document.getElementById('secLinks');
   const judges = namedJudges();
+  const teams = await teamsFilled();
   const all = await store.getAllScores(PROJ, judges.map(j => j.id));
   const sigs = {};
   for (const j of judges) sigs[j.id] = await store.getSignatureMeta(PROJ, j.id);
@@ -1417,9 +1459,10 @@ async function renderLinksSection() {
   const rows = judges.map(j => {
     const link = judgeUrl(PROJ, j.token);
     const scores = all[j.id] || {};
+    const eligible = teams.filter(t => !isConflict(j, t));
     let done = 0, maxU = '';
-    for (let n = 1; n <= SET.teamCount; n++) {
-      const sc = scores[n];
+    for (const t of eligible) {
+      const sc = scores[t.no];
       if (sc && sc.u && sc.u > maxU) maxU = sc.u;
       if (sc && SET.criteria.every((c, i) => sc.vals[i] !== null && sc.vals[i] !== undefined && sc.vals[i] !== '')) done++;
     }
@@ -1436,7 +1479,7 @@ async function renderLinksSection() {
     }
     return '<tr><td>' + esc(j.name) + '</td><td>' + esc(j.role) + '</td>' +
       '<td>' + (j.phone ? esc(j.phone) : '<span style="color:#b91c1c">미설정</span>') + '</td>' +
-      '<td>' + done + '/' + SET.teamCount + '</td>' +
+      '<td>' + done + '/' + eligible.length + (eligible.length < teams.length ? ' <small style="color:#888">(상피 ' + (teams.length - eligible.length) + ')</small>' : '') + '</td>' +
       '<td>' + sigCell + '</td>' +
       '<td><a href="' + esc(link) + '" target="_blank" style="font-size:12px">심사표 열기</a>' +
         '<button class="copybtn cpy" data-link="' + esc(link) + '">링크 복사</button></td></tr>';
@@ -1485,14 +1528,15 @@ async function renderSummarySection() {
 
   const totals = teams.map(t => {
     const per = judges.map(j => {
+      if (isConflict(j, t)) return 'EXCL';
       const sc = (all[j.id] || {})[t.no];
       if (!sc) return null;
       const filled = SET.criteria.map((c, i) => sc.vals[i]).filter(v => v !== null && v !== undefined && v !== '');
       return filled.length ? filled.reduce((a, v) => a + Number(v), 0) : null;
     });
-    const nums = per.filter(v => v !== null);
+    const nums = per.filter(v => v !== null && v !== 'EXCL');
     return {
-      no: t.no, unit: t.unit, name: t.name, pname: t.pname, per,
+      no: t.no, unit: t.unit, school: t.school, name: t.name, pname: t.pname, per,
       sum: nums.length ? nums.reduce((a, v) => a + v, 0) : null,
       avg: nums.length ? nums.reduce((a, v) => a + v, 0) / nums.length : null,
     };
@@ -1503,9 +1547,11 @@ async function renderSummarySection() {
   });
 
   const rows = totals.map(t =>
-    '<tr><td>' + t.no + '</td><td>' + esc(t.unit) + '</td><td>' + esc(t.name) + '</td>' +
+    '<tr><td>' + t.no + '</td><td>' + esc(t.unit) + '</td><td>' + esc(t.school) + '</td><td>' + esc(t.name) + '</td>' +
     '<td>' + esc(t.pname) + '</td>' +
-    t.per.map(v => '<td>' + (v === null ? '' : v) + '</td>').join('') +
+    t.per.map(v => v === 'EXCL'
+      ? '<td class="exclmark">제외</td>'
+      : '<td>' + (v === null ? '' : v) + '</td>').join('') +
     '<td class="hl">' + (t.sum === null ? '' : t.sum) + '</td>' +
     '<td class="hl">' + (t.avg === null ? '' : (Math.round(t.avg * 100) / 100)) + '</td>' +
     '<td class="hl">' + t.rank + '</td></tr>').join('');
@@ -1513,8 +1559,8 @@ async function renderSummarySection() {
   el.innerHTML =
     '<div class="p-title" style="font-size:15px">' + esc(SET.eventTitle) + ' — 심사결과 취합(총괄)</div>' +
     '<table class="grid" style="margin-top:10px"><thead><tr>' +
-    '<th style="width:38px">연번</th><th style="width:70px">개인/단체</th><th style="width:76px">대표자 성명</th>' +
-    '<th style="width:110px">프로젝트명</th>' +
+    '<th style="width:38px">연번</th><th style="width:62px">개인/단체</th><th style="width:56px">학교</th><th style="width:70px">대표자 성명</th>' +
+    '<th style="width:104px">프로젝트명</th>' +
     judges.map(j => '<th>' + esc(j.name) + '</th>').join('') +
     '<th style="width:56px">합계</th><th style="width:56px">평균</th><th style="width:46px">순위</th>' +
     '</tr></thead><tbody>' + rows + '</tbody></table>' +
@@ -1542,10 +1588,11 @@ async function exportXlsx() {
     const nums = SET.criteria.map((c, i) => sc.vals[i]).filter(v => v != null && v !== '');
     return nums.length ? nums.reduce((a, v) => a + Number(v), 0) : null;
   };
+  const xTotal = (j, t) => isConflict(j, t) ? 'EXCL' : rowTotal((all[j.id] || {})[t.no]);
 
   /* ── 취합 시트 ── */
   const ws = wb.addWorksheet('취합');
-  const sumCols = 4 + judges.length + 3;
+  const sumCols = 5 + judges.length + 3;
   ws.mergeCells(1, 1, 1, sumCols);
   const tcell = ws.getCell(1, 1);
   tcell.value = SET.eventTitle + ' — 심사결과 취합(총괄)';
@@ -1554,14 +1601,14 @@ async function exportXlsx() {
   tcell.alignment = { horizontal: 'center', vertical: 'middle' };
   ws.getRow(1).height = 26;
 
-  const sumHead = ['연번', '개인/단체', '대표자 성명', '프로젝트명'].concat(judges.map(j => j.name)).concat(['합계', '평균', '순위']);
+  const sumHead = ['연번', '개인/단체', '학교', '대표자 성명', '프로젝트명'].concat(judges.map(j => j.name)).concat(['합계', '평균', '순위']);
   ws.addRow([]);
   const hr = ws.addRow(sumHead);
   hr.eachCell(c => { c.fill = headFill; c.font = { bold: true }; c.border = border; c.alignment = { horizontal: 'center' }; });
 
   const totals = teams.map(t => {
-    const per = judges.map(j => rowTotal((all[j.id] || {})[t.no]));
-    const nums = per.filter(v => v !== null);
+    const per = judges.map(j => xTotal(j, t));
+    const nums = per.filter(v => v !== null && v !== 'EXCL');
     return {
       t, per,
       sum: nums.length ? nums.reduce((a, v) => a + v, 0) : null,
@@ -1571,8 +1618,8 @@ async function exportXlsx() {
   const rankedAvgs = totals.filter(x => x.avg !== null).map(x => x.avg).sort((a, b) => b - a);
   totals.forEach(x => {
     const row = ws.addRow(
-      [x.t.no, x.t.unit, x.t.name, x.t.pname]
-        .concat(x.per.map(v => v === null ? '' : v))
+      [x.t.no, x.t.unit, x.t.school, x.t.name, x.t.pname]
+        .concat(x.per.map(v => v === null ? '' : (v === 'EXCL' ? '제외' : v)))
         .concat([
           x.sum === null ? '' : x.sum,
           x.avg === null ? '' : Math.round(x.avg * 100) / 100,
@@ -1582,12 +1629,12 @@ async function exportXlsx() {
       if (col <= sumCols) { c.border = border; c.alignment = { horizontal: 'center' }; }
     });
   });
-  ws.getColumn(2).width = 12; ws.getColumn(3).width = 12; ws.getColumn(4).width = 22;
+  ws.getColumn(2).width = 10; ws.getColumn(3).width = 10; ws.getColumn(4).width = 12; ws.getColumn(5).width = 22;
 
   /* ── 위원별 시트 ── */
   for (const j of judges) {
     const wj = wb.addWorksheet(j.name);
-    const nCols = 4 + SET.criteria.length + 2;
+    const nCols = 5 + SET.criteria.length + 2;
     wj.mergeCells(1, 1, 1, nCols);
     const c1 = wj.getCell(1, 1);
     c1.value = SET.eventTitle;
@@ -1600,18 +1647,19 @@ async function exportXlsx() {
     wj.addRow(['심사위원', j.name + (j.role === '심사위원장' ? ' (위원장)' : ''), '', '부문', SET.category, '', '심사일', SET.dateText]);
 
     wj.addRow([]);
-    const jh = wj.addRow(['연번', '개인/단체', '대표자 성명', '프로젝트명']
+    const jh = wj.addRow(['연번', '개인/단체', '학교', '대표자 성명', '프로젝트명']
       .concat(SET.criteria.map(c => c.name + '(' + c.max + ')'))
       .concat(['총점', '심사의견']));
     jh.eachCell(c => { c.fill = headFill; c.font = { bold: true }; c.border = border; c.alignment = { horizontal: 'center', wrapText: true }; });
 
     teams.forEach(t => {
+      const excl = isConflict(j, t);
       const sc = (all[j.id] || {})[t.no] || { vals: [], comment: '' };
-      const tot = rowTotal(sc);
+      const tot = excl ? null : rowTotal(sc);
       const row = wj.addRow(
-        [t.no, t.unit, t.name, t.pname]
-          .concat(SET.criteria.map((c, i) => sc.vals[i] == null ? '' : sc.vals[i]))
-          .concat([tot === null ? '' : tot, sc.comment || '']));
+        [t.no, t.unit, t.school, t.name, t.pname]
+          .concat(excl ? SET.criteria.map(() => '—') : SET.criteria.map((c, i) => sc.vals[i] == null ? '' : sc.vals[i]))
+          .concat(excl ? ['제외', '상피제 제외 (동일 소속)'] : [tot === null ? '' : tot, sc.comment || '']));
       row.eachCell({ includeEmpty: true }, (c, col) => {
         if (col <= nCols) {
           c.border = border;
@@ -1619,7 +1667,7 @@ async function exportXlsx() {
         }
       });
     });
-    wj.getColumn(2).width = 11; wj.getColumn(3).width = 11; wj.getColumn(4).width = 20;
+    wj.getColumn(2).width = 9; wj.getColumn(3).width = 9; wj.getColumn(4).width = 11; wj.getColumn(5).width = 20;
     wj.getColumn(nCols).width = 44;
 
     /* 확인 문구 + 서명 이미지 */
